@@ -1,6 +1,6 @@
 
-# Create connect.html with REAL-TIME bidirectional connection sync
-connect_with_sync = '''<!DOCTYPE html>
+# Create connect.html with CONNECTION REQUESTS and FILE ACCEPT/REJECT
+connect_with_requests = '''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -55,9 +55,35 @@ connect_with_sync = '''<!DOCTYPE html>
             font-size: 16px;
             display: none;
         }
-        .connection-status-bar.active {
-            display: block;
+        .connection-status-bar.active { display: block; }
+        
+        .notification-box {
+            background: #fef3c7;
+            border: 2px solid #fbbf24;
+            color: #92400e;
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            display: none;
         }
+        .notification-box.active { display: block; }
+        .notification-box h3 { margin-bottom: 12px; font-size: 16px; }
+        .notification-buttons {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .notification-buttons button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .accept-btn { background: #10b981; color: white; }
+        .reject-btn { background: #ef4444; color: white; }
+        .accept-btn:hover, .reject-btn:hover { transform: translateY(-2px); }
         
         .btn {
             padding: 10px 20px;
@@ -154,6 +180,18 @@ connect_with_sync = '''<!DOCTYPE html>
             align-items: center;
             gap: 12px;
         }
+        .file-request {
+            padding: 12px;
+            background: #fef3c7;
+            border-left: 4px solid #fbbf24;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            color: #92400e;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
         .footer {
             background: white;
             border-radius: 16px;
@@ -191,13 +229,7 @@ connect_with_sync = '''<!DOCTYPE html>
             margin-bottom: 24px;
         }
         .modal-header h3 { font-size: 24px; }
-        .close-btn {
-            background: none;
-            border: none;
-            font-size: 32px;
-            cursor: pointer;
-            color: #6b7280;
-        }
+        .close-btn { background: none; border: none; font-size: 32px; cursor: pointer; color: #6b7280; }
         .qr-container {
             display: flex;
             justify-content: center;
@@ -211,6 +243,7 @@ connect_with_sync = '''<!DOCTYPE html>
             .controls { flex-direction: column; }
             .btn { width: 100%; }
             .device-card { flex-direction: column; align-items: flex-start; }
+            .file-request { flex-direction: column; align-items: flex-start; }
         }
     </style>
 </head>
@@ -229,7 +262,16 @@ connect_with_sync = '''<!DOCTYPE html>
             <button onclick="editDeviceName()" class="btn btn-primary">✏️ Edit</button>
         </div>
         
-        <!-- CONNECTION STATUS BAR - SYNCED REAL-TIME -->
+        <!-- CONNECTION REQUEST NOTIFICATION -->
+        <div class="notification-box" id="connectionRequest">
+            <h3>🔔 Connection Request</h3>
+            <p id="connectionRequestText" style="margin-bottom: 12px;"></p>
+            <div class="notification-buttons">
+                <button onclick="acceptConnection()" class="accept-btn">✅ Accept</button>
+                <button onclick="rejectConnection()" class="reject-btn">❌ Reject</button>
+            </div>
+        </div>
+        
         <div class="connection-status-bar" id="connectionBar">
             ✅ Connected to: <span id="connectedToName"></span>
         </div>
@@ -249,9 +291,7 @@ connect_with_sync = '''<!DOCTYPE html>
     <div class="section">
         <h2>📱 Connected Devices</h2>
         <div id="connectedDevices">
-            <p style="color: #6b7280; text-align: center; padding: 20px;">
-                Click "Discover" to find devices
-            </p>
+            <p style="color: #6b7280; text-align: center; padding: 20px;">Click "Discover" to find devices</p>
         </div>
     </div>
     
@@ -271,13 +311,15 @@ connect_with_sync = '''<!DOCTYPE html>
         </div>
     </div>
     
-    <!-- Received Files -->
+    <!-- File Requests/Received -->
     <div class="section">
-        <h2>📥 Received Files</h2>
+        <h2>📥 File Requests & Received</h2>
+        <div id="fileRequests" style="display: none;">
+            <h3 style="margin-bottom: 12px; color: #fbbf24;">⏳ Pending Requests</h3>
+            <div id="requestsList"></div>
+        </div>
         <div id="receivedFiles">
-            <p style="color: #6b7280; text-align: center; padding: 20px;">
-                Received files will appear here
-            </p>
+            <p style="color: #6b7280; text-align: center; padding: 20px;">Received files will appear here</p>
         </div>
     </div>
     
@@ -328,9 +370,7 @@ connect_with_sync = '''<!DOCTYPE html>
             </div>
             <div style="margin-bottom: 24px;">
                 <div id="qr-reader"></div>
-                <button onclick="startCamera()" class="btn btn-warning" style="width: 100%; margin-top: 16px;" id="startCameraBtn">
-                    📷 Start Camera
-                </button>
+                <button onclick="startCamera()" class="btn btn-warning" style="width: 100%; margin-top: 16px;" id="startCameraBtn">📷 Start Camera</button>
                 <div id="scan-result" style="margin-top: 16px; display: none; padding: 12px; background: #f3f4f6; border-radius: 8px; text-align: center;"></div>
             </div>
         </div>
@@ -341,37 +381,28 @@ connect_with_sync = '''<!DOCTYPE html>
         let myDeviceName = '';
         let qrScanner = null;
         let connectedTo = null;
+        let pendingConnections = new Map();
+        let pendingFiles = new Map();
         let receivedFiles = new Map();
-        let syncInterval = null;
         
         window.onload = function() {
             console.log('🚀 LocalDrop Starting...');
             
-            // Get or create device ID (PERMANENT)
             myDeviceId = localStorage.getItem('deviceId');
             if (!myDeviceId) {
                 myDeviceId = 'DEV-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
                 localStorage.setItem('deviceId', myDeviceId);
             }
             
-            // Get or create device name
             myDeviceName = localStorage.getItem('deviceName') || 'Device-' + Math.floor(Math.random() * 9000);
             localStorage.setItem('deviceName', myDeviceName);
             
             document.getElementById('currentDeviceName').textContent = myDeviceName;
             
-            console.log('✅ Device:', { id: myDeviceId, name: myDeviceName });
-            
-            // Start heartbeat
             startHeartbeat();
-            
-            // Start listening for incoming files
-            startFileListener();
-            
-            // CRITICAL: Start real-time sync
             startRealTimeSync();
-            
-            // Setup drag & drop
+            startFileListener();
+            startConnectionListener();
             setupDragDrop();
             
             if (!localStorage.getItem('visited')) {
@@ -380,62 +411,120 @@ connect_with_sync = '''<!DOCTYPE html>
             }
         };
         
-        // HEARTBEAT - Keep device visible (every 1 second for instant sync)
+        // HEARTBEAT
         function startHeartbeat() {
             setInterval(() => {
                 const deviceData = {
                     id: myDeviceId,
                     name: myDeviceName,
                     timestamp: Date.now(),
-                    connectedTo: connectedTo ? connectedTo.id : null
+                    connectedTo: connectedTo ? connectedTo.id : null,
+                    status: connectedTo ? 'connected' : 'available'
                 };
                 localStorage.setItem('device_' + myDeviceId, JSON.stringify(deviceData));
             }, 1000);
         }
         
-        // REAL-TIME SYNC - Update every 500ms for instant connection display
+        // REAL-TIME SYNC
         function startRealTimeSync() {
-            syncInterval = setInterval(() => {
-                // Update connection status bar on BOTH devices
+            setInterval(() => {
                 updateConnectionStatusBar();
-                
-                // Sync device list
                 syncDeviceConnections();
-                
-                // Check if other device sees us as connected
                 checkRemoteConnection();
-                
-            }, 500); // Every 500ms for real-time feel
+            }, 500);
         }
         
-        // Update the connection status bar at top
+        // LISTEN FOR CONNECTION REQUESTS
+        function startConnectionListener() {
+            setInterval(() => {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith('connection-request_') && key.endsWith('_' + myDeviceId)) {
+                        try {
+                            const req = JSON.parse(localStorage.getItem(key));
+                            const reqId = key;
+                            
+                            if (!pendingConnections.has(reqId) && req.status === 'pending') {
+                                pendingConnections.set(reqId, req);
+                                showConnectionRequest(req);
+                            }
+                        } catch (e) {}
+                    }
+                }
+            }, 300);
+        }
+        
+        // SHOW CONNECTION REQUEST
+        function showConnectionRequest(req) {
+            console.log('🔔 Connection request from:', req.fromName);
+            document.getElementById('connectionRequestText').textContent = req.fromName + ' wants to connect';
+            document.getElementById('connectionRequest').classList.add('active');
+            document.getElementById('connectionRequest').dataset.requestId = req.id;
+            document.getElementById('connectionRequest').dataset.fromId = req.from;
+            showToast('🔔 Connection request from ' + req.fromName);
+        }
+        
+        // ACCEPT CONNECTION
+        function acceptConnection() {
+            const box = document.getElementById('connectionRequest');
+            const requestId = box.dataset.requestId;
+            const fromId = box.dataset.fromId;
+            
+            console.log('✅ Accepting connection from:', fromId);
+            
+            // Accept connection
+            connectedTo = { id: fromId, name: document.getElementById('connectionRequestText').textContent.replace(' wants to connect', '') };
+            
+            // Update device status
+            const deviceData = {
+                id: myDeviceId,
+                name: myDeviceName,
+                timestamp: Date.now(),
+                connectedTo: fromId,
+                status: 'connected'
+            };
+            localStorage.setItem('device_' + myDeviceId, JSON.stringify(deviceData));
+            
+            // Remove notification
+            box.classList.remove('active');
+            pendingConnections.delete(requestId);
+            
+            updateConnectionStatusBar();
+            showToast('✅ Connected to ' + connectedTo.name);
+        }
+        
+        // REJECT CONNECTION
+        function rejectConnection() {
+            const box = document.getElementById('connectionRequest');
+            console.log('❌ Rejected connection');
+            
+            box.classList.remove('active');
+            pendingConnections.clear();
+            showToast('❌ Connection rejected');
+        }
+        
         function updateConnectionStatusBar() {
             const bar = document.getElementById('connectionBar');
             
             if (connectedTo) {
-                // Check if remote device still has us in their connectedTo
                 const remoteDeviceData = localStorage.getItem('device_' + connectedTo.id);
                 if (remoteDeviceData) {
                     try {
                         const data = JSON.parse(remoteDeviceData);
                         if (data.connectedTo === myDeviceId) {
-                            // Both connected!
                             bar.classList.add('active');
                             document.getElementById('connectedToName').textContent = connectedTo.name;
                             return;
                         }
                     } catch (e) {}
                 }
-                
-                // Else, just show we're connected (waiting for them)
                 bar.classList.add('active');
-                document.getElementById('connectedToName').textContent = connectedTo.name + ' (waiting for response)';
+                document.getElementById('connectedToName').textContent = connectedTo.name + ' (pending)';
             } else {
                 bar.classList.remove('active');
             }
         }
         
-        // Sync device list continuously
         function syncDeviceConnections() {
             const devices = [];
             const now = Date.now();
@@ -445,46 +534,33 @@ connect_with_sync = '''<!DOCTYPE html>
                 if (key && key.startsWith('device_')) {
                     try {
                         const device = JSON.parse(localStorage.getItem(key));
-                        
-                        // Show devices with fresh heartbeat (within 15 seconds)
                         if (now - device.timestamp < 15000 && device.id !== myDeviceId) {
                             devices.push(device);
                         }
                     } catch (e) {}
                 }
             }
-            
-            // Update UI every 500ms
             updateDevicesList(devices);
         }
         
-        // Check if remote device sees us as connected
         function checkRemoteConnection() {
             if (!connectedTo) return;
-            
             const remoteData = localStorage.getItem('device_' + connectedTo.id);
             if (remoteData) {
                 try {
                     const data = JSON.parse(remoteData);
-                    if (data.connectedTo === myDeviceId) {
-                        // Remote device also connected to us!
-                        updateStatus('✅ SYNCED: Both Connected to ' + connectedTo.name, 'online');
+                    if (data.connectedTo === myDeviceId && data.status === 'connected') {
+                        updateStatus('✅ SYNCED: Connected to ' + connectedTo.name, 'online');
                     }
                 } catch (e) {}
             }
         }
         
-        function discoverDevices() {
-            console.log('🔍 Discovering...');
-            discoverDevices(); // Will trigger updateDevicesList
-        }
-        
         function updateDevicesList(devices) {
             const container = document.getElementById('connectedDevices');
             
-            // IMPORTANT: Show list even if connected
             if (devices.length === 0) {
-                container.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">No devices found. Make sure other devices are open.</p>';
+                container.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">No devices found</p>';
                 return;
             }
             
@@ -496,21 +572,16 @@ connect_with_sync = '''<!DOCTYPE html>
                 
                 const card = document.createElement('div');
                 card.className = 'device-card';
+                if (bothConnected) card.classList.add('connected');
                 
-                // Color coding
-                if (bothConnected) {
-                    card.classList.add('connected');
-                    card.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
-                }
-                
-                const status = bothConnected ? '✅ Both Connected' : 
-                               isConnected ? '📤 Waiting for response' :
-                               remoteConnectedToMe ? '📥 Waiting for my response' :
+                const status = bothConnected ? '✅ Connected' : 
+                               isConnected ? '📤 Waiting to accept' :
+                               remoteConnectedToMe ? '📥 Waiting for me' :
                                'Click to connect';
                 
                 const btn = isConnected ? 
                     `<button onclick="disconnectDevice()" class="btn btn-danger" style="padding: 8px 12px;">Disconnect</button>` :
-                    `<button onclick="connectToDevice({id: '${device.id}', name: '${device.name}'})" class="btn" style="background: rgba(255,255,255,0.2); color: white; padding: 8px 12px;">Connect</button>`;
+                    `<button onclick="sendConnectionRequest({id: '${device.id}', name: '${device.name}'})" class="btn" style="background: rgba(255,255,255,0.2); color: white; padding: 8px 12px;">Request</button>`;
                 
                 card.innerHTML = `
                     <div style="flex: 1;">
@@ -523,36 +594,34 @@ connect_with_sync = '''<!DOCTYPE html>
             });
         }
         
-        function connectToDevice(device) {
-            console.log('📞 Connecting to:', device.name);
-            connectedTo = device;
+        function sendConnectionRequest(device) {
+            console.log('📤 Sending connection request to:', device.name);
             
-            // Broadcast connection immediately
-            const deviceData = {
-                id: myDeviceId,
-                name: myDeviceName,
-                timestamp: Date.now(),
-                connectedTo: device.id
+            const requestId = 'connection-request_' + myDeviceId + '_' + device.id + '_' + Date.now();
+            const req = {
+                id: requestId,
+                from: myDeviceId,
+                fromName: myDeviceName,
+                to: device.id,
+                status: 'pending',
+                timestamp: Date.now()
             };
-            localStorage.setItem('device_' + myDeviceId, JSON.stringify(deviceData));
             
-            updateConnectionStatusBar();
-            updateStatus('📤 Connecting to ' + device.name + '...', 'online');
-            showToast('📤 Connecting to ' + device.name);
+            localStorage.setItem(requestId, JSON.stringify(req));
+            updateStatus('📤 Connection request sent to ' + device.name, 'online');
+            showToast('📤 Request sent to ' + device.name);
         }
         
         function disconnectDevice() {
             connectedTo = null;
-            
-            // Update connection status
             const deviceData = {
                 id: myDeviceId,
                 name: myDeviceName,
                 timestamp: Date.now(),
-                connectedTo: null
+                connectedTo: null,
+                status: 'available'
             };
             localStorage.setItem('device_' + myDeviceId, JSON.stringify(deviceData));
-            
             updateConnectionStatusBar();
             updateStatus('✅ Ready to connect', 'online');
             syncDeviceConnections();
@@ -565,15 +634,25 @@ connect_with_sync = '''<!DOCTYPE html>
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
                     
+                    // Listen for file requests
+                    if (key && key.startsWith('file-request_') && key.endsWith('_' + myDeviceId)) {
+                        try {
+                            const fileReq = JSON.parse(localStorage.getItem(key));
+                            if (!pendingFiles.has(key) && fileReq.status === 'pending') {
+                                pendingFiles.set(key, fileReq);
+                                showFileRequest(fileReq, key);
+                            }
+                        } catch (e) {}
+                    }
+                    
+                    // Listen for accepted files
                     if (key && key.startsWith('transfer_') && key.endsWith('_' + myDeviceId)) {
                         try {
                             const fileData = JSON.parse(localStorage.getItem(key));
-                            
                             if (!receivedFiles.has(key)) {
                                 console.log('📥 Received:', fileData.fileName);
                                 receivedFiles.set(key, fileData);
                                 addReceivedFile(fileData.fileName, fileData.size);
-                                showToast('📥 Received: ' + fileData.fileName);
                             }
                         } catch (e) {}
                     }
@@ -581,99 +660,70 @@ connect_with_sync = '''<!DOCTYPE html>
             }, 300);
         }
         
-        function editDeviceName() {
-            document.getElementById('deviceNameInput').value = myDeviceName;
-            document.getElementById('nameModal').classList.add('show');
-        }
-        
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('show');
-        }
-        
-        function saveDeviceName() {
-            const newName = document.getElementById('deviceNameInput').value.trim();
-            if (!newName || newName.length > 20) {
-                alert('Invalid name');
-                return;
+        function showFileRequest(fileReq, key) {
+            if (!document.getElementById('fileRequests').style.display || document.getElementById('fileRequests').style.display === 'none') {
+                document.getElementById('fileRequests').style.display = 'block';
             }
-            myDeviceName = newName;
-            localStorage.setItem('deviceName', myDeviceName);
-            document.getElementById('currentDeviceName').textContent = myDeviceName;
-            closeModal('nameModal');
-            showToast('✅ Name updated');
+            
+            const item = document.createElement('div');
+            item.className = 'file-request';
+            item.innerHTML = `
+                <div>
+                    <strong>${fileReq.fromName}</strong><br>
+                    <span style="font-size: 12px;">wants to send: ${fileReq.fileName}</span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button onclick="acceptFile('${key}')" class="accept-btn" style="padding: 6px 12px; font-size: 12px;">Accept</button>
+                    <button onclick="rejectFile('${key}')" class="reject-btn" style="padding: 6px 12px; font-size: 12px;">Reject</button>
+                </div>
+            `;
+            document.getElementById('requestsList').appendChild(item);
+            showToast('📥 ' + fileReq.fromName + ' wants to send a file');
         }
         
-        function showMyQR() {
-            const qrData = 'LOCALDROP:' + myDeviceId + ':' + myDeviceName;
-            document.getElementById('qrDeviceName').textContent = myDeviceName;
-            
-            const container = document.getElementById('qrcode');
-            container.innerHTML = '';
-            
-            new QRCode(container, {
-                text: qrData,
-                width: 256,
-                height: 256,
-                colorDark: '#1f2937',
-                colorLight: '#ffffff'
-            });
-            
-            document.getElementById('qrModal').classList.add('show');
-        }
-        
-        function scanQRCode() {
-            document.getElementById('scannerModal').classList.add('show');
-        }
-        
-        async function startCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                stream.getTracks().forEach(track => track.stop());
-                initQRScanner();
-            } catch (error) {
-                showToast('❌ Camera denied');
+        function acceptFile(key) {
+            const fileReq = pendingFiles.get(key);
+            if (fileReq) {
+                // Send actual file
+                const transferKey = 'transfer_' + fileReq.from + '_' + myDeviceId + '_' + Date.now();
+                const fileData = {
+                    id: transferKey,
+                    fileName: fileReq.fileName,
+                    size: fileReq.fileSize,
+                    data: fileReq.data,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(transferKey, JSON.stringify(fileData));
+                
+                // Remove request
+                localStorage.removeItem(key);
+                pendingFiles.delete(key);
+                
+                // Clean up UI
+                const items = document.getElementById('requestsList').children;
+                for (let i = items.length - 1; i >= 0; i--) {
+                    if (items[i].textContent.includes(fileReq.fileName)) {
+                        items[i].remove();
+                    }
+                }
+                
+                showToast('✅ File accepted: ' + fileReq.fileName);
             }
         }
         
-        function initQRScanner() {
-            document.getElementById('startCameraBtn').style.display = 'none';
-            qrScanner = new Html5Qrcode("qr-reader");
+        function rejectFile(key) {
+            const fileReq = pendingFiles.get(key);
+            localStorage.removeItem(key);
+            pendingFiles.delete(key);
             
-            qrScanner.start(
-                { facingMode: "environment" },
-                { fps: 10, qrbox: { width: 250, height: 250 } },
-                (decodedText) => handleQRScan(decodedText),
-                () => {}
-            ).catch(err => {
-                showToast('❌ Scanner failed');
-                document.getElementById('startCameraBtn').style.display = 'block';
-            });
-        }
-        
-        function handleQRScan(qrData) {
-            if (!qrData.startsWith('LOCALDROP:')) {
-                showToast('❌ Invalid QR');
-                return;
+            const items = document.getElementById('requestsList').children;
+            for (let i = items.length - 1; i >= 0; i--) {
+                if (items[i].textContent.includes(fileReq?.fileName)) {
+                    items[i].remove();
+                }
             }
             
-            const parts = qrData.split(':');
-            const deviceId = parts[1];
-            const deviceName = parts[2];
-            
-            if (deviceId === myDeviceId) {
-                showToast('⚠️ Cannot connect to yourself');
-                return;
-            }
-            
-            if (qrScanner) qrScanner.stop();
-            
-            document.getElementById('scan-result').textContent = '✅ Found: ' + deviceName;
-            document.getElementById('scan-result').style.display = 'block';
-            
-            setTimeout(() => {
-                connectToDevice({ id: deviceId, name: deviceName });
-                closeModal('scannerModal');
-            }, 1500);
+            showToast('❌ File rejected');
         }
         
         function handleFileSelect(files) {
@@ -685,27 +735,27 @@ connect_with_sync = '''<!DOCTYPE html>
             document.getElementById('transferList').style.display = 'block';
             
             Array.from(files).forEach(file => {
-                const fileId = 'transfer_' + myDeviceId + '_' + connectedTo.id + '_' + Date.now();
+                const fileId = 'file-request_' + myDeviceId + '_' + connectedTo.id + '_' + Date.now();
                 addTransferItem(fileId, file.name, file.size);
                 
                 const reader = new FileReader();
                 reader.onload = function() {
                     const base64 = reader.result.split(',')[1];
                     
-                    const fileData = {
+                    const fileReq = {
                         id: fileId,
                         fileName: file.name,
-                        size: file.size,
-                        fileType: file.type,
-                        fromDevice: myDeviceId,
-                        fromDeviceName: myDeviceName,
-                        toDevice: connectedTo.id,
+                        fileSize: file.size,
+                        from: myDeviceId,
+                        fromName: myDeviceName,
+                        to: connectedTo.id,
                         data: base64,
+                        status: 'pending',
                         timestamp: Date.now()
                     };
                     
-                    localStorage.setItem(fileId, JSON.stringify(fileData));
-                    console.log('📤 File sent:', file.name);
+                    localStorage.setItem(fileId, JSON.stringify(fileReq));
+                    console.log('📤 File request sent:', file.name);
                     
                     let progress = 0;
                     const interval = setInterval(() => {
@@ -714,13 +764,11 @@ connect_with_sync = '''<!DOCTYPE html>
                             progress = 100;
                             clearInterval(interval);
                             updateTransferProgress(fileId, 100);
-                            showToast('✅ Sent: ' + file.name);
                         } else {
                             updateTransferProgress(fileId, progress);
                         }
                     }, 150);
                 };
-                
                 reader.readAsDataURL(file);
             });
         }
@@ -775,6 +823,99 @@ connect_with_sync = '''<!DOCTYPE html>
             return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
         }
         
+        function editDeviceName() {
+            document.getElementById('deviceNameInput').value = myDeviceName;
+            document.getElementById('nameModal').classList.add('show');
+        }
+        
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('show');
+        }
+        
+        function saveDeviceName() {
+            const newName = document.getElementById('deviceNameInput').value.trim();
+            if (!newName || newName.length > 20) {
+                alert('Invalid name');
+                return;
+            }
+            myDeviceName = newName;
+            localStorage.setItem('deviceName', myDeviceName);
+            document.getElementById('currentDeviceName').textContent = myDeviceName;
+            closeModal('nameModal');
+            showToast('✅ Name updated');
+        }
+        
+        function showMyQR() {
+            const qrData = 'LOCALDROP:' + myDeviceId + ':' + myDeviceName;
+            document.getElementById('qrDeviceName').textContent = myDeviceName;
+            const container = document.getElementById('qrcode');
+            container.innerHTML = '';
+            new QRCode(container, {
+                text: qrData,
+                width: 256,
+                height: 256,
+                colorDark: '#1f2937',
+                colorLight: '#ffffff'
+            });
+            document.getElementById('qrModal').classList.add('show');
+        }
+        
+        function scanQRCode() {
+            document.getElementById('scannerModal').classList.add('show');
+        }
+        
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                stream.getTracks().forEach(track => track.stop());
+                initQRScanner();
+            } catch (error) {
+                showToast('❌ Camera denied');
+            }
+        }
+        
+        function initQRScanner() {
+            document.getElementById('startCameraBtn').style.display = 'none';
+            qrScanner = new Html5Qrcode("qr-reader");
+            qrScanner.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                (decodedText) => handleQRScan(decodedText),
+                () => {}
+            ).catch(err => {
+                showToast('❌ Scanner failed');
+                document.getElementById('startCameraBtn').style.display = 'block';
+            });
+        }
+        
+        function handleQRScan(qrData) {
+            if (!qrData.startsWith('LOCALDROP:')) {
+                showToast('❌ Invalid QR');
+                return;
+            }
+            const parts = qrData.split(':');
+            const deviceId = parts[1];
+            const deviceName = parts[2];
+            
+            if (deviceId === myDeviceId) {
+                showToast('⚠️ Cannot connect to yourself');
+                return;
+            }
+            
+            if (qrScanner) qrScanner.stop();
+            document.getElementById('scan-result').textContent = '✅ Found: ' + deviceName;
+            document.getElementById('scan-result').style.display = 'block';
+            
+            setTimeout(() => {
+                sendConnectionRequest({ id: deviceId, name: deviceName });
+                closeModal('scannerModal');
+            }, 1500);
+        }
+        
+        function discoverDevices() {
+            syncDeviceConnections();
+        }
+        
         function setupDragDrop() {
             const zone = document.getElementById('dropZone');
             zone.addEventListener('dragover', (e) => {
@@ -818,21 +959,18 @@ connect_with_sync = '''<!DOCTYPE html>
 </html>'''
 
 with open('connect.html', 'w', encoding='utf-8') as f:
-    f.write(connect_with_sync)
+    f.write(connect_with_requests)
 
-print("✅ connect.html - REAL-TIME BIDIRECTIONAL SYNC!")
-print("\n🔧 What Changed:")
-print("   1. Real-time sync every 500ms (instant feeling)")
-print("   2. Connection status bar at top shows BOTH devices")
-print("   3. Each device broadcasts who they're connected to")
-print("   4. Device list shows all devices with connection status")
-print("   5. Green highlighting when BOTH devices connected")
-print("   6. Status shows: Connected, Waiting, or Ready")
+print("✅ connect.html - WITH CONNECTION & FILE ACCEPT/REJECT!")
+print("\n🔧 New Features:")
+print("   1. Connection Requests - Must accept/reject")
+print("   2. File Requests - Must accept/reject before send")
+print("   3. Notification boxes with Accept/Reject buttons")
+print("   4. Pending connections list")
+print("   5. Pending files list")
 print("\n✅ How it works:")
-print("   - Device A clicks Discover")
-print("   - Device B scans QR")
-print("   - Device A shows green bar: 'Connected to Device B'")
-print("   - Device B shows green bar: 'Connected to Device A'")
-print("   - Device list shows BOTH connected devices")
-print("   - Files transfer bidirectionally")
-print("\n🚀 Perfect sync!")
+print("   Device A → Sends connection request → Device B receives")
+print("   Device B → Accept button → Connection confirmed")
+print("   Device A → Sends file request → Device B receives")
+print("   Device B → Accept button → File transferred")
+print("\n🚀 Full request/response system!")
