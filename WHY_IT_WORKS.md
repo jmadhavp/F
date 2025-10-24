@@ -1,6 +1,4 @@
-
-# Create explanation document
-explanation = '''# Why SnapDrop Works & Our App Now Works Too!
+# Why SnapDrop Works & Our App Now Works Too!
 
 ## 🔍 The Core Problem & Solution
 
@@ -182,21 +180,21 @@ conn.on('open', () => {
    → conn = myPeer.connect("abc-123")
 
 6. PeerJS cloud handles signaling:
-   
+
    Device B → PeerJS Cloud → Device A
    "I want to connect to abc-123"
-   
+
    PeerJS Cloud → Device A
    "xyz-789 wants to connect to you"
-   
+
    Device A → PeerJS Cloud → Device B
    "OK, here's my WebRTC offer (SDP)"
-   
+
    Device B → PeerJS Cloud → Device A
    "Here's my answer (SDP)"
-   
+
    [ICE candidates exchanged]
-   
+
    Device A ←──────────────→ Device B
         Direct P2P connection!
 
@@ -401,16 +399,3 @@ Your app now works **exactly like SnapDrop/PairDrop**:
 **Made with ❤️ in India by PROGRAMMER MJ**
 
 Now your LocalDrop works perfectly across all devices, just like the professionals! 🚀
-'''
-
-with open('WHY_IT_WORKS.md', 'w', encoding='utf-8') as f:
-    f.write(explanation)
-
-print("✅ WHY_IT_WORKS.md created - Complete explanation")
-print("\n📚 This document explains:")
-print("   - Why SnapDrop works")
-print("   - Why our old version failed")
-print("   - How the new version works")
-print("   - PeerJS architecture")
-print("   - Testing guide")
-print("   - Troubleshooting")
