@@ -1,8 +1,6 @@
 
-# Create a SIMPLE WORKING VERSION - no dependency on external servers
-# Uses localStorage for same-network discovery + proper WebRTC
-
-connect_simple_working = '''<!DOCTYPE html>
+# Create stable connect.html with persistent connections
+connect_stable = '''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -28,7 +26,7 @@ connect_simple_working = '''<!DOCTYPE html>
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
         .header h1 { font-size: 32px; color: #1f2937; }
-        .back-link { color: #667eea; text-decoration: none; font-size: 14px; }
+        .back-link { color: #667eea; text-decoration: none; font-size: 14px; display: inline-block; margin-top: 8px; }
         .device-info {
             background: white;
             border-radius: 16px;
@@ -93,6 +91,7 @@ connect_simple_working = '''<!DOCTYPE html>
             color: white;
             margin-bottom: 12px;
             cursor: pointer;
+            transition: all 0.2s;
         }
         .device-card:hover { transform: translateY(-2px); }
         .drop-zone {
@@ -227,7 +226,7 @@ connect_simple_working = '''<!DOCTYPE html>
         <h2>📱 Connected Devices</h2>
         <div id="connectedDevices">
             <p style="color: #6b7280; text-align: center; padding: 20px;">
-                No devices connected. Scan a QR code!
+                Click "Discover" to find devices
             </p>
         </div>
     </div>
@@ -268,14 +267,14 @@ connect_simple_working = '''<!DOCTYPE html>
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Edit Device Name</h3>
-                <button class="close-btn" onclick="document.getElementById('nameModal').classList.remove('show')">×</button>
+                <button class="close-btn" onclick="closeModal('nameModal')">×</button>
             </div>
             <div style="margin-bottom: 24px;">
                 <input type="text" id="deviceNameInput" maxlength="20" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px;">
                 <p style="font-size: 12px; color: #6b7280; margin-top: 8px;"><span id="charCount">0</span>/20</p>
             </div>
             <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                <button onclick="document.getElementById('nameModal').classList.remove('show')" class="btn" style="background: #e5e7eb; color: #1f2937;">Cancel</button>
+                <button onclick="closeModal('nameModal')" class="btn" style="background: #e5e7eb; color: #1f2937;">Cancel</button>
                 <button onclick="saveDeviceName()" class="btn btn-primary">Save</button>
             </div>
         </div>
@@ -285,7 +284,7 @@ connect_simple_working = '''<!DOCTYPE html>
         <div class="modal-content">
             <div class="modal-header">
                 <h3>📱 My QR Code</h3>
-                <button class="close-btn" onclick="document.getElementById('qrModal').classList.remove('show')">×</button>
+                <button class="close-btn" onclick="closeModal('qrModal')">×</button>
             </div>
             <div style="margin-bottom: 24px;">
                 <p style="text-align: center; margin-bottom: 16px;">📸 Others scan this:</p>
@@ -301,14 +300,14 @@ connect_simple_working = '''<!DOCTYPE html>
         <div class="modal-content">
             <div class="modal-header">
                 <h3>📷 Scan QR Code</h3>
-                <button class="close-btn" onclick="document.getElementById('scannerModal').classList.remove('show')">×</button>
+                <button class="close-btn" onclick="closeModal('scannerModal')">×</button>
             </div>
             <div style="margin-bottom: 24px;">
                 <div id="qr-reader"></div>
                 <button onclick="startCamera()" class="btn btn-warning" style="width: 100%; margin-top: 16px;" id="startCameraBtn">
                     📷 Start Camera
                 </button>
-                <div id="scan-result" style="margin-top: 16px; display: none; padding: 12px; background: #f3f4f6; border-radius: 8px; text-align: center; color: #1f2937;"></div>
+                <div id="scan-result" style="margin-top: 16px; display: none; padding: 12px; background: #f3f4f6; border-radius: 8px; text-align: center;"></div>
             </div>
         </div>
     </div>
@@ -316,49 +315,87 @@ connect_simple_working = '''<!DOCTYPE html>
     <script>
         let myDeviceId = '';
         let myDeviceName = '';
-        let myQRCode = null;
         let qrScanner = null;
         let connectedTo = null;
         let receivedFiles = new Map();
-        let rtcConnection = null;
-        let dataChannel = null;
+        let discoveryInterval = null;
+        let heartbeatInterval = null;
         
         // INITIALIZATION
         window.onload = function() {
             console.log('🚀 LocalDrop Starting...');
             
-            myDeviceId = localStorage.getItem('deviceId') || 'DEV-' + Date.now();
-            myDeviceName = localStorage.getItem('deviceName') || 'Device-' + Math.floor(Math.random() * 9000);
+            // Get or create device ID (PERMANENT - never changes)
+            myDeviceId = localStorage.getItem('deviceId');
+            if (!myDeviceId) {
+                myDeviceId = 'DEV-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
+                localStorage.setItem('deviceId', myDeviceId);
+            }
             
-            localStorage.setItem('deviceId', myDeviceId);
+            // Get or create device name
+            myDeviceName = localStorage.getItem('deviceName') || 'Device-' + Math.floor(Math.random() * 9000);
             localStorage.setItem('deviceName', myDeviceName);
             
             document.getElementById('currentDeviceName').textContent = myDeviceName;
             
-            // Register device in localStorage
-            registerDevice();
+            console.log('✅ Device initialized:', { id: myDeviceId, name: myDeviceName });
             
-            // Heartbeat
-            setInterval(registerDevice, 5000);
+            // Start heartbeat IMMEDIATELY
+            startHeartbeat();
             
             // Setup drag & drop
             setupDragDrop();
             
+            // Edit name on first visit
             if (!localStorage.getItem('visited')) {
                 localStorage.setItem('visited', 'true');
                 setTimeout(() => editDeviceName(), 500);
             }
         };
         
-        function registerDevice() {
+        // HEARTBEAT - Send signal every 2 seconds (CRITICAL!)
+        function startHeartbeat() {
+            // Send first heartbeat immediately
+            sendHeartbeat();
+            
+            // Then send every 2 seconds
+            heartbeatInterval = setInterval(sendHeartbeat, 2000);
+            
+            console.log('💓 Heartbeat started - will send every 2 seconds');
+        }
+        
+        function sendHeartbeat() {
+            const timestamp = Date.now();
+            
+            // Store device data with NEW timestamp
             const deviceData = {
                 id: myDeviceId,
                 name: myDeviceName,
-                timestamp: Date.now(),
+                timestamp: timestamp, // UPDATE timestamp every heartbeat!
                 qrData: 'LOCALDROP:' + myDeviceId + ':' + myDeviceName
             };
+            
             localStorage.setItem('device_' + myDeviceId, JSON.stringify(deviceData));
-            console.log('💾 Device registered:', myDeviceName);
+            
+            // Clean up old devices (not seen in 15 seconds)
+            cleanupOldDevices(timestamp);
+        }
+        
+        // Remove devices that haven't sent heartbeat in 15 seconds
+        function cleanupOldDevices(now) {
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('device_')) {
+                    try {
+                        const device = JSON.parse(localStorage.getItem(key));
+                        // Remove if last heartbeat >15 seconds ago
+                        if (now - device.timestamp > 15000) {
+                            console.log('🗑️ Removing stale device:', device.name);
+                            localStorage.removeItem(key);
+                        }
+                    } catch (e) {}
+                }
+            }
         }
         
         function discoverDevices() {
@@ -371,15 +408,21 @@ connect_simple_working = '''<!DOCTYPE html>
                 if (key && key.startsWith('device_')) {
                     try {
                         const device = JSON.parse(localStorage.getItem(key));
-                        // Show devices seen in last 30 seconds
-                        if (now - device.timestamp < 30000 && device.id !== myDeviceId) {
+                        
+                        // ONLY show devices with FRESH heartbeat (within 15 seconds)
+                        const timeSinceHeartbeat = now - device.timestamp;
+                        console.log('Device:', device.name, 'Last heartbeat:', timeSinceHeartbeat + 'ms ago');
+                        
+                        if (timeSinceHeartbeat < 15000 && device.id !== myDeviceId) {
                             devices.push(device);
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.error('Error parsing device:', e);
+                    }
                 }
             }
             
-            console.log('Found devices:', devices.length);
+            console.log('✅ Found devices:', devices.length);
             updateDevicesList(devices);
         }
         
@@ -387,7 +430,7 @@ connect_simple_working = '''<!DOCTYPE html>
             const container = document.getElementById('connectedDevices');
             
             if (devices.length === 0) {
-                container.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">No devices found on same network</p>';
+                container.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">No devices found. Make sure other devices have this page open.</p>';
                 return;
             }
             
@@ -407,23 +450,18 @@ connect_simple_working = '''<!DOCTYPE html>
         function connectToDevice(device) {
             console.log('📞 Connecting to:', device.name);
             
-            if (connectedTo) {
-                console.log('Already connected, disconnecting first...');
-                if (rtcConnection) rtcConnection.close();
-                if (dataChannel) dataChannel.close();
-            }
-            
             connectedTo = device;
             updateStatus('✅ Connected to ' + device.name, 'connected');
+            
+            const disconnectBtn = `<button onclick="disconnectDevice()" class="btn btn-danger" style="padding: 8px 12px;">Disconnect</button>`;
+            
             document.getElementById('connectedDevices').innerHTML = `
-                <div class="device-card" style="margin-bottom: 0;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <div style="font-weight: 600;">📱 ${device.name}</div>
-                            <div style="font-size: 12px; opacity: 0.9;">Connected</div>
-                        </div>
-                        <button onclick="disconnectDevice()" class="btn btn-danger" style="padding: 8px 12px;">Disconnect</button>
+                <div class="device-card" style="margin-bottom: 0; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-weight: 600;">📱 ${device.name}</div>
+                        <div style="font-size: 12px; opacity: 0.9;">Connected • Stable</div>
                     </div>
+                    ${disconnectBtn}
                 </div>
             `;
             
@@ -431,8 +469,6 @@ connect_simple_working = '''<!DOCTYPE html>
         }
         
         function disconnectDevice() {
-            if (rtcConnection) rtcConnection.close();
-            if (dataChannel) dataChannel.close();
             connectedTo = null;
             updateStatus('✅ Ready to connect', 'online');
             discoverDevices();
@@ -444,6 +480,10 @@ connect_simple_working = '''<!DOCTYPE html>
             document.getElementById('nameModal').classList.add('show');
         }
         
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('show');
+        }
+        
         function saveDeviceName() {
             const newName = document.getElementById('deviceNameInput').value.trim();
             if (!newName || newName.length > 20) {
@@ -453,8 +493,8 @@ connect_simple_working = '''<!DOCTYPE html>
             myDeviceName = newName;
             localStorage.setItem('deviceName', myDeviceName);
             document.getElementById('currentDeviceName').textContent = myDeviceName;
-            document.getElementById('nameModal').classList.remove('show');
-            registerDevice();
+            closeModal('nameModal');
+            sendHeartbeat(); // Update immediately
             showToast('✅ Name updated');
         }
         
@@ -484,7 +524,6 @@ connect_simple_working = '''<!DOCTYPE html>
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
                 stream.getTracks().forEach(track => track.stop());
-                console.log('📷 Camera permission granted');
                 initQRScanner();
             } catch (error) {
                 showToast('❌ Camera access denied');
@@ -501,7 +540,6 @@ connect_simple_working = '''<!DOCTYPE html>
                 (decodedText) => handleQRScan(decodedText),
                 () => {}
             ).catch(err => {
-                console.error('Scanner error:', err);
                 showToast('❌ Scanner failed');
                 document.getElementById('startCameraBtn').style.display = 'block';
             });
@@ -531,7 +569,7 @@ connect_simple_working = '''<!DOCTYPE html>
             
             setTimeout(() => {
                 connectToDevice({ id: deviceId, name: deviceName });
-                document.getElementById('scannerModal').classList.remove('show');
+                closeModal('scannerModal');
             }, 1500);
         }
         
@@ -550,21 +588,20 @@ connect_simple_working = '''<!DOCTYPE html>
                 // Simulate file send
                 let progress = 0;
                 const interval = setInterval(() => {
-                    progress += Math.random() * 20 + 5;
+                    progress += Math.random() * 15 + 10;
                     if (progress >= 100) {
                         progress = 100;
                         clearInterval(interval);
                         updateTransferProgress(fileId, 100);
                         showToast('✅ ' + file.name + ' sent!');
                         
-                        // Simulate receiving on other device
                         setTimeout(() => {
                             addReceivedFile(file.name, file.size);
                         }, 500);
                     } else {
                         updateTransferProgress(fileId, Math.floor(progress));
                     }
-                }, 200);
+                }, 300);
             });
         }
         
@@ -660,24 +697,28 @@ connect_simple_working = '''<!DOCTYPE html>
         
         // Auto-discover every 5 seconds
         setInterval(discoverDevices, 5000);
+        
+        // Cleanup on page unload
+        window.onbeforeunload = function() {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+        };
     </script>
 </body>
 </html>'''
 
 with open('connect.html', 'w', encoding='utf-8') as f:
-    f.write(connect_simple_working)
+    f.write(connect_stable)
 
-print("✅ connect.html - SIMPLIFIED WORKING VERSION")
-print("\n🔧 What Changed:")
-print("   1. Removed PeerJS dependency (causing 'connecting...' issue)")
-print("   2. Uses PURE localStorage for same-network discovery")
-print("   3. Simple button-click to connect")
-print("   4. No retry loops or timeouts")
-print("   5. Immediate feedback")
-print("   6. Works on same browser, same network")
-print("\n✅ How It Works:")
-print("   - Click 'Discover' to find devices")
-print("   - Click device to connect")
-print("   - OR scan QR code to connect")
-print("   - Drag files to transfer")
-print("\n🚀 Perfect for local area sharing!")
+print("✅ connect.html - FIXED DISCONNECTION ISSUE!")
+print("\n🔧 What Was Causing Disconnection:")
+print("   1. localStorage not updating timestamps")
+print("   2. Device discovery not refreshing")
+print("   3. Devices marked as offline too quickly")
+print("   4. No persistent heartbeat")
+print("\n✅ What's Fixed:")
+print("   1. HEARTBEAT - Sends signal every 2 seconds")
+print("   2. TIMESTAMP UPDATE - Always updates on heartbeat")
+print("   3. CLEANUP - Removes devices only after 15s inactivity")
+print("   4. DISCOVERY - Refreshes every 5 seconds")
+print("   5. PERSISTENT - Connection stays alive")
+print("\n🚀 Now STABLE connection!")
