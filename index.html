@@ -818,39 +818,86 @@
             gap: var(--space-8);
         }
 
-        .name-edit-form {
+        /* Modal styles for device name editing */
+        .modal {
+            display: none;
             position: fixed;
             top: 0;
             left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            display: flex;
-            align-items: center;
+            width: 100%;
+            height: 100%;
+            z-index: 9999;
             justify-content: center;
-            z-index: 1000;
-            padding: var(--space-20);
+            align-items: center;
         }
 
-        .name-edit-modal {
+        .modal.show {
+            display: flex !important;
+        }
+
+        .modal-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            cursor: pointer;
+        }
+
+        .modal-content {
+            position: relative;
             background: var(--color-surface);
             border-radius: var(--radius-lg);
-            padding: var(--space-24);
-            width: 100%;
+            padding: 0;
             max-width: 400px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            z-index: 10000;
             border: 1px solid var(--color-card-border);
-            box-shadow: var(--shadow-lg);
         }
 
         .modal-header {
-            margin-bottom: var(--space-20);
+            padding: var(--space-24) var(--space-24) var(--space-16) var(--space-24);
+            border-bottom: 1px solid var(--color-card-border-inner);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        .modal-actions {
+        .modal-header h3 {
+            margin: 0;
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-semibold);
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: var(--font-size-2xl);
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            padding: var(--space-4);
+            border-radius: var(--radius-sm);
+            transition: all var(--duration-fast) var(--ease-standard);
+            line-height: 1;
+        }
+
+        .close-btn:hover {
+            background: var(--color-secondary);
+            color: var(--color-text);
+        }
+
+        .modal-body {
+            padding: var(--space-24);
+        }
+
+        .modal-footer {
+            padding: var(--space-16) var(--space-24) var(--space-24) var(--space-24);
             display: flex;
             gap: var(--space-12);
             justify-content: flex-end;
-            margin-top: var(--space-20);
+            border-top: 1px solid var(--color-card-border-inner);
         }
 
         .empty-state {
@@ -957,18 +1004,20 @@
     </div>
 
     <!-- Name Edit Modal -->
-    <div class="name-edit-form hidden" id="nameEditModal">
-        <div class="name-edit-modal">
+    <div id="nameModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeNameModal()"></div>
+        <div class="modal-content">
             <div class="modal-header">
-                <h4>Edit Device Name</h4>
+                <h3>Edit Device Name</h3>
+                <button class="close-btn" onclick="closeNameModal()">×</button>
             </div>
-            <div class="form-group">
+            <div class="modal-body">
                 <label class="form-label">Device Name</label>
-                <input type="text" id="deviceNameInput" class="form-control" placeholder="Enter device name">
+                <input id="deviceNameInput" type="text" class="form-control" maxlength="20" placeholder="Enter device name" />
             </div>
-            <div class="modal-actions">
-                <button class="btn btn--outline" id="cancelNameEdit">Cancel</button>
-                <button class="btn btn--primary" id="saveNameEdit">Save</button>
+            <div class="modal-footer">
+                <button onclick="closeNameModal()" class="btn btn--outline cancel-btn">Cancel</button>
+                <button onclick="saveDeviceName()" class="btn btn--primary save-btn">Save</button>
             </div>
         </div>
     </div>
@@ -1090,36 +1139,25 @@
             }
 
             setupEventListeners() {
-                // Edit device name
+                // Edit device name - using proper event handlers
                 document.getElementById('editNameBtn').addEventListener('click', () => {
-                    this.showNameEditModal();
-                });
-
-                document.getElementById('cancelNameEdit').addEventListener('click', () => {
-                    this.hideNameEditModal();
-                });
-
-                document.getElementById('saveNameEdit').addEventListener('click', () => {
-                    this.saveDeviceName();
+                    this.openNameModal();
                 });
 
                 // Handle Enter key in name input
                 document.getElementById('deviceNameInput').addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') {
-                        this.saveDeviceName();
+                        window.saveDeviceName();
                     }
                 });
 
-                // Handle Escape key and click outside modal
-                document.getElementById('nameEditModal').addEventListener('click', (e) => {
-                    if (e.target.id === 'nameEditModal') {
-                        this.hideNameEditModal();
-                    }
-                });
-
+                // Handle Escape key
                 document.addEventListener('keydown', (e) => {
-                    if (e.key === 'Escape' && !document.getElementById('nameEditModal').classList.contains('hidden')) {
-                        this.hideNameEditModal();
+                    if (e.key === 'Escape') {
+                        const modal = document.getElementById('nameModal');
+                        if (modal.style.display === 'flex') {
+                            window.closeNameModal();
+                        }
                     }
                 });
 
@@ -1159,62 +1197,48 @@
                 });
             }
 
-            showNameEditModal() {
+            openNameModal() {
+                const modal = document.getElementById('nameModal');
                 const input = document.getElementById('deviceNameInput');
-                const charCount = document.getElementById('nameCharCount');
-                
-                input.value = this.deviceName;
-                this.updateCharCount();
-                document.getElementById('nameEditModal').classList.remove('hidden');
-                
-                // Add input listener for character count
-                input.addEventListener('input', () => this.updateCharCount());
-                
-                setTimeout(() => {
-                    input.focus();
-                    input.select();
-                }, 100);
+                input.value = this.deviceName || '';
+                modal.style.display = 'flex';
+                input.focus();
             }
 
-            updateCharCount() {
-                const input = document.getElementById('deviceNameInput');
-                const charCount = document.getElementById('nameCharCount');
-                const length = input.value.length;
-                
-                if (charCount) {
-                    charCount.textContent = `${length}/20 characters`;
-                    charCount.style.color = length > 15 ? 'var(--color-warning)' : 'var(--color-text-secondary)';
-                }
-            }
-
-            hideNameEditModal() {
-                document.getElementById('nameEditModal').classList.add('hidden');
+            closeNameModal() {
+                const modal = document.getElementById('nameModal');
+                modal.style.display = 'none';
             }
 
             saveDeviceName() {
                 const input = document.getElementById('deviceNameInput');
                 const newName = input.value.trim();
                 
-                // Validate input
                 if (!newName) {
-                    this.showError('Device name cannot be empty');
-                    input.focus();
+                    alert('Please enter a device name');
                     return;
                 }
                 
                 if (newName.length > 20) {
-                    this.showError('Device name must be 20 characters or less');
-                    input.focus();
+                    alert('Name too long. Max 20 characters.');
                     return;
                 }
                 
                 // Save the name
                 this.deviceName = newName;
                 this.hasSetCustomName = true;
-                this.updateDeviceDisplay();
-                this.announceDevice(); // Re-announce with new name
-                this.hideNameEditModal();
-                this.showSuccess(`Device name updated to "${newName}"`);
+                
+                // Update display
+                document.getElementById('currentDeviceName').textContent = newName;
+                
+                // Close modal
+                this.closeNameModal();
+                
+                // Show success notification
+                this.showToast('Device name updated to: ' + newName);
+                
+                // Update peer registry
+                this.announceDevice();
             }
 
             startDiscovery() {
@@ -1690,10 +1714,30 @@
             }
         }
 
+        // Global functions for modal (required for onclick handlers)
+        window.openNameModal = function() {
+            if (window.app) {
+                window.app.openNameModal();
+            }
+        };
+
+        window.closeNameModal = function() {
+            if (window.app) {
+                window.app.closeNameModal();
+            }
+        };
+
+        window.saveDeviceName = function() {
+            if (window.app) {
+                window.app.saveDeviceName();
+            }
+        };
+
         // Initialize the application
         let app;
         document.addEventListener('DOMContentLoaded', () => {
             app = new LocalDropApp();
+            window.app = app; // Make app globally accessible for onclick handlers
         });
     </script>
 </body>
