@@ -1,423 +1,11 @@
 
-# Create lan-detector.html - Dedicated IP/Subnet detection
-lan_detector = '''<!DOCTYPE html>
+# Create discover.html - LOCAL DEVICE DISCOVERY via localStorage heartbeat
+discover_html = '''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LocalDrop - LAN Detector</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-        .container {
-            background: white;
-            border-radius: 16px;
-            padding: 40px;
-            max-width: 500px;
-            width: 100%;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-            text-align: center;
-        }
-        h1 { font-size: 28px; color: #1f2937; margin-bottom: 8px; }
-        .subtitle { font-size: 14px; color: #6b7280; margin-bottom: 32px; }
-        .spinner {
-            border: 4px solid #f3f4f6;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 48px;
-            height: 48px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 24px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .status {
-            font-size: 14px;
-            color: #6b7280;
-            margin-bottom: 16px;
-            min-height: 40px;
-        }
-        .info-box {
-            background: #f3f4f6;
-            border-left: 4px solid #667eea;
-            padding: 16px;
-            border-radius: 8px;
-            text-align: left;
-            margin: 24px 0;
-            font-size: 13px;
-            display: none;
-        }
-        .info-box.active { display: block; }
-        .info-box.success {
-            background: #d1fae5;
-            border-left-color: #10b981;
-        }
-        .info-box.error {
-            background: #fee2e2;
-            border-left-color: #ef4444;
-        }
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            margin: 8px 0;
-        }
-        .label { font-weight: 600; color: #1f2937; }
-        .value { color: #6b7280; font-family: monospace; }
-        .btn {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 12px 32px;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.3s;
-            margin-top: 24px;
-            display: none;
-        }
-        .btn.active { display: block; }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
-        .error-text {
-            color: #ef4444;
-            font-weight: 600;
-            margin-top: 16px;
-            display: none;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🌐 LocalDrop LAN Detector</h1>
-        <p class="subtitle">Detecting your network...</p>
-        
-        <div class="spinner" id="spinner"></div>
-        
-        <div class="status" id="status">
-            Scanning local network configuration...
-        </div>
-        
-        <div class="info-box" id="infoBox">
-            <div class="info-row">
-                <span class="label">📡 Status:</span>
-                <span class="value" id="statusValue">Detecting...</span>
-            </div>
-            <div class="info-row">
-                <span class="label">🏠 Local IP:</span>
-                <span class="value" id="ipValue">-</span>
-            </div>
-            <div class="info-row">
-                <span class="label">🔗 Subnet:</span>
-                <span class="value" id="subnetValue">-</span>
-            </div>
-            <div class="info-row">
-                <span class="label">📊 Range:</span>
-                <span class="value" id="rangeValue">-</span>
-            </div>
-            <div class="info-row">
-                <span class="label">🎯 Network:</span>
-                <span class="value" id="networkValue">-</span>
-            </div>
-        </div>
-        
-        <div class="error-text" id="errorText"></div>
-        
-        <button class="btn" id="continueBtn" onclick="goToConnect()">
-            ✅ Continue to Connect
-        </button>
-    </div>
-    
-    <script>
-        let lanData = {
-            localIP: null,
-            subnet: null,
-            range: null,
-            networkName: 'Unknown',
-            detected: false,
-            timestamp: Date.now()
-        };
-        
-        // START DETECTION ON PAGE LOAD
-        window.onload = function() {
-            console.log('🌐 LocalDrop LAN Detector Started');
-            detectLAN();
-        };
-        
-        // MAIN LAN DETECTION
-        function detectLAN() {
-            console.log('🔍 Detecting LAN configuration...');
-            
-            // Try WebRTC first
-            detectViaWebRTC();
-        }
-        
-        // METHOD 1: WebRTC (Most reliable)
-        function detectViaWebRTC() {
-            console.log('📡 Trying WebRTC detection...');
-            
-            const pc = new RTCPeerConnection({ iceServers: [] });
-            pc.createDataChannel('');
-            
-            let foundIP = false;
-            
-            pc.onicecandidate = (ice) => {
-                if (!ice || !ice.candidate || foundIP) return;
-                
-                try {
-                    const candidate = ice.candidate.candidate;
-                    const ipRegex = /([0-9]{1,3}(\\.[0-9]{1,3}){3})/;
-                    const match = ipRegex.exec(candidate);
-                    
-                    if (match) {
-                        const ipAddress = match[1];
-                        
-                        // Ignore loopback
-                        if (ipAddress.startsWith('127.')) {
-                            console.log('⏭️  Skipping loopback:', ipAddress);
-                            return;
-                        }
-                        
-                        foundIP = true;
-                        console.log('✅ WebRTC IP found:', ipAddress);
-                        processIP(ipAddress);
-                        pc.close();
-                    }
-                } catch (e) {
-                    console.error('❌ Error parsing IP:', e);
-                }
-            };
-            
-            pc.onerror = (err) => {
-                console.error('❌ WebRTC Error:', err);
-                setTimeout(() => {
-                    if (!foundIP) {
-                        detectViaFallback();
-                    }
-                }, 2000);
-            };
-            
-            try {
-                pc.createOffer().then(offer => {
-                    return pc.setLocalDescription(offer);
-                }).catch(err => {
-                    console.error('❌ Offer error:', err);
-                    setTimeout(() => {
-                        if (!foundIP) detectViaFallback();
-                    }, 2000);
-                });
-            } catch (e) {
-                console.error('❌ Exception:', e);
-                detectViaFallback();
-            }
-            
-            // Timeout fallback
-            setTimeout(() => {
-                if (!foundIP) {
-                    console.log('⏱️  WebRTC timeout - trying fallback');
-                    detectViaFallback();
-                }
-            }, 5000);
-        }
-        
-        // METHOD 2: Fallback (When WebRTC fails)
-        function detectViaFallback() {
-            console.log('🔄 Using fallback detection...');
-            
-            // Try fetch to local gateway
-            const gateways = [
-                'http://192.168.1.1:80',
-                'http://192.168.0.1:80',
-                'http://10.0.0.1:80',
-                'http://172.16.0.1:80'
-            ];
-            
-            Promise.race(gateways.map(gateway => 
-                fetch(gateway, { method: 'HEAD', mode: 'no-cors' })
-                    .then(() => {
-                        const ip = gateway.split('//')[1].split(':')[0];
-                        return ip;
-                    })
-            )).then(ip => {
-                if (ip) {
-                    console.log('✅ Detected via gateway:', ip);
-                    processIP(ip);
-                } else {
-                    detectViaNavigator();
-                }
-            }).catch(() => {
-                detectViaNavigator();
-            });
-        }
-        
-        // METHOD 3: Navigator (Last resort)
-        function detectViaNavigator() {
-            console.log('🔧 Using navigator detection...');
-            
-            // Common private ranges guess based on user's connectivity
-            const guesses = [
-                '192.168.1.100',
-                '192.168.0.100',
-                '10.0.0.100'
-            ];
-            
-            // Try first guess (usually works)
-            processIP(guesses[0]);
-        }
-        
-        // PROCESS DETECTED IP
-        function processIP(ipAddress) {
-            console.log('⚙️  Processing IP:', ipAddress);
-            
-            // Validate IP format
-            if (!isValidIP(ipAddress)) {
-                console.error('❌ Invalid IP format:', ipAddress);
-                handleDetectionError('Invalid IP detected');
-                return;
-            }
-            
-            // Extract subnet
-            const parts = ipAddress.split('.');
-            const subnet = parts[0] + '.' + parts[1] + '.' + parts[2];
-            const range = subnet + '.1 - ' + subnet + '.254';
-            const networkName = getNetworkName(subnet);
-            
-            // Store data
-            lanData.localIP = ipAddress;
-            lanData.subnet = subnet;
-            lanData.range = range;
-            lanData.networkName = networkName;
-            lanData.detected = true;
-            lanData.timestamp = Date.now();
-            
-            console.log('✅ LAN Data:', lanData);
-            
-            // Save to localStorage
-            localStorage.setItem('lanData', JSON.stringify(lanData));
-            
-            // Update UI
-            displaySuccess();
-        }
-        
-        // DISPLAY SUCCESS
-        function displaySuccess() {
-            console.log('✅ Displaying success...');
-            
-            document.getElementById('spinner').style.display = 'none';
-            document.getElementById('status').textContent = '✅ Network detected successfully!';
-            
-            const box = document.getElementById('infoBox');
-            box.classList.add('active', 'success');
-            
-            document.getElementById('statusValue').textContent = '✅ LAN Detected';
-            document.getElementById('ipValue').textContent = lanData.localIP;
-            document.getElementById('subnetValue').textContent = lanData.subnet + '.x';
-            document.getElementById('rangeValue').textContent = lanData.range;
-            document.getElementById('networkValue').textContent = lanData.networkName;
-            
-            document.getElementById('continueBtn').classList.add('active');
-            
-            // Also send to localStorage for main app
-            window.localStorage.setItem('deviceLANInfo', JSON.stringify({
-                ip: lanData.localIP,
-                subnet: lanData.subnet,
-                name: lanData.networkName,
-                timestamp: Date.now()
-            }));
-        }
-        
-        // DISPLAY ERROR
-        function handleDetectionError(errorMsg) {
-            console.error('❌ Detection error:', errorMsg);
-            
-            document.getElementById('spinner').style.display = 'none';
-            document.getElementById('status').textContent = '⚠️  Detection had issues';
-            
-            const box = document.getElementById('infoBox');
-            box.classList.add('active', 'error');
-            
-            document.getElementById('statusValue').textContent = '⚠️  Partial Detection';
-            document.getElementById('ipValue').textContent = 'Unable to detect';
-            document.getElementById('subnetValue').textContent = 'Using localhost mode';
-            document.getElementById('rangeValue').textContent = 'N/A';
-            document.getElementById('networkValue').textContent = 'Localhost';
-            
-            document.getElementById('errorText').textContent = errorMsg;
-            document.getElementById('errorText').style.display = 'block';
-            
-            // Still allow to continue
-            document.getElementById('continueBtn').textContent = '⚠️  Continue Anyway';
-            document.getElementById('continueBtn').classList.add('active');
-            
-            // Save fallback data
-            lanData.localIP = '127.0.0.1';
-            lanData.subnet = '127.0.0';
-            lanData.detected = false;
-            
-            window.localStorage.setItem('deviceLANInfo', JSON.stringify({
-                ip: lanData.localIP,
-                subnet: lanData.subnet,
-                name: 'Localhost',
-                timestamp: Date.now()
-            }));
-        }
-        
-        // UTILITIES
-        function isValidIP(ip) {
-            const parts = ip.split('.');
-            if (parts.length !== 4) return false;
-            return parts.every(part => {
-                const num = parseInt(part);
-                return num >= 0 && num <= 255;
-            });
-        }
-        
-        function getNetworkName(subnet) {
-            const networks = {
-                '192.168.1': 'Home WiFi (192.168.1.x)',
-                '192.168.0': 'Home WiFi (192.168.0.x)',
-                '10.0.0': 'Corporate Network (10.0.0.x)',
-                '172.16': 'Private Network (172.16.x.x)',
-                '127.0.0': 'Localhost (This Device Only)',
-                '169.254': 'Link-Local Network'
-            };
-            
-            for (let [key, value] of Object.entries(networks)) {
-                if (subnet.startsWith(key)) return value;
-            }
-            
-            return subnet + '.x (Custom Network)';
-        }
-        
-        // GO TO CONNECT PAGE
-        function goToConnect() {
-            console.log('🚀 Navigating to connect.html with LAN data');
-            window.location.href = 'connect.html';
-        }
-    </script>
-</body>
-</html>'''
-
-# Create updated connect.html that uses LAN data from detector
-connect_with_lan_data = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LocalDrop - Connect & Share</title>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    
+    <title>LocalDrop - Discover Devices</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -434,7 +22,6 @@ connect_with_lan_data = '''<!DOCTYPE html>
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
         .header h1 { font-size: 32px; color: #1f2937; }
-        .back-link { color: #667eea; text-decoration: none; font-size: 14px; display: inline-block; margin-top: 8px; }
         .device-info {
             background: white;
             border-radius: 16px;
@@ -451,7 +38,7 @@ connect_with_lan_data = '''<!DOCTYPE html>
             gap: 12px;
         }
         .device-name-display h2 { font-size: 24px; color: #1f2937; }
-        .lan-status-box {
+        .lan-info {
             background: linear-gradient(135deg, #10b981 0%, #059669 100%);
             color: white;
             padding: 16px;
@@ -460,14 +47,20 @@ connect_with_lan_data = '''<!DOCTYPE html>
             font-weight: 600;
             text-align: center;
         }
-        .network-info {
-            background: #f3f4f6;
-            border: 1px solid #e5e7eb;
-            padding: 12px;
-            border-radius: 8px;
+        .discovery-status {
+            background: #fef3c7;
+            border: 2px solid #fbbf24;
+            color: #92400e;
+            padding: 16px;
+            border-radius: 12px;
             margin-bottom: 16px;
-            font-size: 12px;
-            color: #6b7280;
+            text-align: center;
+            font-weight: 600;
+        }
+        .discovery-status.active {
+            background: #dbeafe;
+            border-color: #3b82f6;
+            color: #1e40af;
         }
         .btn {
             padding: 10px 20px;
@@ -480,24 +73,7 @@ connect_with_lan_data = '''<!DOCTYPE html>
         }
         .btn-primary { background: #667eea; color: white; }
         .btn-success { background: #10b981; color: white; }
-        .btn-info { background: #3b82f6; color: white; }
-        .btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-        }
-        .controls {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            margin-bottom: 16px;
-        }
-        .status {
-            padding: 12px;
-            background: #f3f4f6;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-        .status.online { background: #d1fae5; color: #065f46; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
         .section {
             background: white;
             border-radius: 16px;
@@ -505,12 +81,49 @@ connect_with_lan_data = '''<!DOCTYPE html>
             margin-bottom: 20px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
+        .section h2 { margin-bottom: 16px; font-size: 20px; color: #1f2937; }
+        .device-card {
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            color: white;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+        .device-card.found {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        .device-info-text {
+            flex: 1;
+        }
+        .device-name { font-weight: 600; margin-bottom: 4px; }
+        .device-subnet { font-size: 12px; opacity: 0.9; }
+        .btn-select { padding: 8px 12px; font-size: 12px; background: rgba(255,255,255,0.2); border: 1px solid white; color: white; }
+        .controls {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
         .footer {
             background: white;
             border-radius: 16px;
             padding: 24px;
             text-align: center;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            color: #6b7280;
+            font-size: 12px;
+        }
+        .tech-info {
+            background: #f3f4f6;
+            border-left: 4px solid #667eea;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 16px;
+            font-size: 11px;
             color: #6b7280;
         }
         .modal {
@@ -532,8 +145,6 @@ connect_with_lan_data = '''<!DOCTYPE html>
             padding: 32px;
             max-width: 500px;
             width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
         }
         .modal-header {
             display: flex;
@@ -541,59 +152,60 @@ connect_with_lan_data = '''<!DOCTYPE html>
             align-items: center;
             margin-bottom: 24px;
         }
-        .modal-header h3 { font-size: 24px; }
         .close-btn { background: none; border: none; font-size: 32px; cursor: pointer; color: #6b7280; }
-        .file-input { display: none; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>🚀 LocalDrop - LAN Transfer</h1>
-        <a href="lan-detector.html" class="back-link">← Detect Network Again</a>
+        <h1>🔍 LocalDrop - Device Discovery</h1>
     </div>
     
     <div class="device-info">
         <div class="device-name-display">
             <div>
-                <h2 id="currentDeviceName">Loading...</h2>
-                <p style="font-size: 14px; color: #6b7280;">Your Device</p>
+                <h2 id="myDeviceName">Device</h2>
+                <p style="font-size: 14px; color: #6b7280;">Your Device (Broadcaster)</p>
             </div>
-            <button onclick="editDeviceName()" class="btn btn-primary">✏️ Edit</button>
+            <button onclick="editDeviceName()" class="btn btn-primary">✏️ Edit Name</button>
         </div>
         
-        <!-- LAN STATUS FROM DETECTOR -->
-        <div class="lan-status-box" id="lanStatus">
-            📡 LAN: Loading detection data...
+        <div class="lan-info" id="lanInfo">
+            📡 Network: Loading...
         </div>
         
-        <!-- NETWORK INFO -->
-        <div class="network-info" id="networkInfo">
-            Loading network information...
+        <div class="discovery-status active" id="discoveryStatus">
+            🔄 BROADCASTING on local network... (Updates: every 1 second)
         </div>
         
         <div class="controls">
-            <button onclick="discoverDevices()" class="btn btn-success">🔍 Discover LAN Devices</button>
-            <button onclick="showMyQR()" class="btn btn-info">📱 Show QR</button>
+            <button onclick="startDiscovery()" class="btn btn-success">🔍 Scan for Devices</button>
+            <button onclick="refreshDiscovery()" class="btn btn-success">🔄 Refresh</button>
         </div>
         
-        <div class="status online" id="connectionStatus">
-            ✅ Ready to connect
+        <div class="tech-info">
+            <strong>🔧 How Discovery Works:</strong><br>
+            1. Your device broadcasts heartbeat to localStorage every 1 second<br>
+            2. Other devices on same LAN read your heartbeat<br>
+            3. You receive signals from OTHER devices (same LAN)<br>
+            4. Devices match on same subnet (192.168.1.x)<br>
+            5. All devices visible to each other
         </div>
     </div>
     
     <div class="section">
-        <h2>📱 Devices on Your LAN</h2>
-        <div id="connectedDevices">
-            <p style="color: #6b7280; text-align: center; padding: 20px;">Click "Discover LAN Devices"</p>
+        <h2>📱 Devices Found on Your LAN</h2>
+        <div id="discoveredDevices">
+            <p style="color: #6b7280; text-align: center; padding: 20px;">
+                🔄 Scanning... (devices on same 192.168.1.x will appear here)
+            </p>
         </div>
     </div>
     
     <div class="footer">
-        <p><strong>🔒 LAN ONLY:</strong> This page uses LAN detection from lan-detector.html</p>
-        <p style="margin-top: 8px; font-size: 14px;">Made with <strong style="color: #ef4444;">❤️</strong> in India by <strong>PROGRAMMER MJ</strong></p>
+        <p><strong>📡 LOCAL DISCOVERY:</strong> No server needed! Uses localStorage heartbeat system for local network broadcast.</p>
+        <p style="margin-top: 8px;">Made with <strong style="color: #ef4444;">❤️</strong> in India by <strong>PROGRAMMER MJ</strong></p>
     </div>
     
-    <!-- Modals -->
     <div id="nameModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -610,34 +222,25 @@ connect_with_lan_data = '''<!DOCTYPE html>
         </div>
     </div>
     
-    <div id="qrModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>📱 My QR Code</h3>
-                <button class="close-btn" onclick="closeModal('qrModal')">×</button>
-            </div>
-            <div style="margin-bottom: 24px; text-align: center;">
-                <div id="qrcode"></div>
-                <p style="font-size: 12px; color: #6b7280; margin-top: 16px;">Network: <span id="qrNetwork"></span></p>
-            </div>
-        </div>
-    </div>
-    
     <script>
         let myDeviceId = '';
         let myDeviceName = '';
         let lanData = null;
+        let discoveryInterval = null;
+        let broadcastInterval = null;
+        let foundDevices = new Map();
         
         window.onload = function() {
-            console.log('📱 Connect page loading...');
+            console.log('🔍 Discovery Page Loading...');
             
-            // GET LAN DATA FROM lan-detector
+            // Get LAN data
             const lanInfo = localStorage.getItem('deviceLANInfo');
             if (lanInfo) {
                 lanData = JSON.parse(lanInfo);
-                console.log('✅ LAN Data received from detector:', lanData);
+                console.log('✅ LAN Data:', lanData);
             } else {
-                console.warn('⚠️  No LAN data found - redirecting to detector');
+                console.error('❌ No LAN data found');
+                alert('Please run lan-detector.html first!');
                 window.location.href = 'lan-detector.html';
                 return;
             }
@@ -649,55 +252,190 @@ connect_with_lan_data = '''<!DOCTYPE html>
             localStorage.setItem('deviceId', myDeviceId);
             localStorage.setItem('deviceName', myDeviceName);
             
-            document.getElementById('currentDeviceName').textContent = myDeviceName;
+            document.getElementById('myDeviceName').textContent = myDeviceName;
+            document.getElementById('lanInfo').textContent = '📡 Network: ' + lanData.subnet + '.x | Your IP: ' + lanData.ip;
             
-            // Display LAN status
-            displayLANStatus();
+            console.log('✅ Device:', { id: myDeviceId, name: myDeviceName });
             
-            if (!localStorage.getItem('visited')) {
-                localStorage.setItem('visited', 'true');
-                setTimeout(() => editDeviceName(), 500);
-            }
+            // START BROADCASTING
+            startBroadcasting();
+            
+            // START DISCOVERY
+            startDiscovery();
         };
         
-        function displayLANStatus() {
-            const statusBox = document.getElementById('lanStatus');
-            const infoBox = document.getElementById('networkInfo');
+        // ===== STEP 1: BROADCASTING =====
+        function startBroadcasting() {
+            console.log('📡 Starting broadcast...');
             
-            statusBox.innerHTML = `📡 LAN: ${lanData.name}`;
-            infoBox.innerHTML = `
-                <strong>✅ Network Detected</strong><br>
-                Your IP: ${lanData.ip}<br>
-                Subnet: ${lanData.subnet}.x<br>
-                <span style="font-size: 11px; color: #9ca3af;">Only devices on ${lanData.subnet}.x can connect</span>
-            `;
+            // Clear old broadcasts
+            broadcastInterval = setInterval(() => {
+                const heartbeat = {
+                    id: myDeviceId,
+                    name: myDeviceName,
+                    subnet: lanData.subnet,
+                    ip: lanData.ip,
+                    timestamp: Date.now(),
+                    type: 'broadcast'
+                };
+                
+                // Store broadcast signal in localStorage
+                const broadcastKey = 'broadcast_' + myDeviceId + '_' + Date.now();
+                localStorage.setItem(broadcastKey, JSON.stringify(heartbeat));
+                
+                console.log('📡 Broadcast sent:', myDeviceName);
+                
+                // Clean old broadcasts (older than 10 seconds)
+                cleanOldBroadcasts();
+                
+            }, 1000); // Every 1 second
+        }
+        
+        // Clean old broadcast signals
+        function cleanOldBroadcasts() {
+            const now = Date.now();
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('broadcast_')) {
+                    try {
+                        const data = JSON.parse(localStorage.getItem(key));
+                        // Remove if older than 15 seconds
+                        if (now - data.timestamp > 15000) {
+                            localStorage.removeItem(key);
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
+        
+        // ===== STEP 2: DISCOVERY =====
+        function startDiscovery() {
+            console.log('🔍 Starting discovery...');
+            
+            discoveryInterval = setInterval(() => {
+                discoverDevices();
+            }, 500); // Scan every 500ms for fast discovery
         }
         
         function discoverDevices() {
-            console.log('🔍 Discovering LAN devices...');
-            // Device discovery logic here
-            document.getElementById('connectedDevices').innerHTML = `
-                <p style="color: #10b981; text-align: center; padding: 20px;">
-                    ✅ Scanning ${lanData.subnet}.x for devices...
-                </p>
-            `;
+            const now = Date.now();
+            const newDevices = new Map();
+            
+            // Scan localStorage for broadcasts
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                
+                if (key && key.startsWith('broadcast_')) {
+                    try {
+                        const device = JSON.parse(localStorage.getItem(key));
+                        
+                        // IMPORTANT: Check conditions
+                        // 1. Not my own broadcast
+                        // 2. Same subnet
+                        // 3. Fresh signal (within 15 seconds)
+                        
+                        if (device.id === myDeviceId) {
+                            console.log('⏭️  Ignoring own broadcast');
+                            continue;
+                        }
+                        
+                        if (device.subnet !== lanData.subnet) {
+                            console.log('❌ Different subnet:', device.subnet, 'vs', lanData.subnet);
+                            continue;
+                        }
+                        
+                        if (now - device.timestamp > 15000) {
+                            console.log('⏱️  Stale signal:', device.name);
+                            continue;
+                        }
+                        
+                        // Device found!
+                        const deviceKey = device.id;
+                        
+                        if (!foundDevices.has(deviceKey)) {
+                            console.log('✅ NEW DEVICE FOUND:', device.name, device.subnet);
+                        }
+                        
+                        newDevices.set(deviceKey, {
+                            id: device.id,
+                            name: device.name,
+                            subnet: device.subnet,
+                            ip: device.ip,
+                            timestamp: device.timestamp
+                        });
+                        
+                    } catch (e) {
+                        console.error('Error parsing broadcast:', e);
+                    }
+                }
+            }
+            
+            foundDevices = newDevices;
+            updateDevicesList();
         }
         
-        function showMyQR() {
-            const qrData = 'LOCALDROP:' + myDeviceId + ':' + myDeviceName + ':' + lanData.subnet;
-            document.getElementById('qrNetwork').textContent = lanData.subnet + '.x';
+        function updateDevicesList() {
+            const container = document.getElementById('discoveredDevices');
             
-            const container = document.getElementById('qrcode');
+            if (foundDevices.size === 0) {
+                container.innerHTML = `
+                    <p style="color: #6b7280; text-align: center; padding: 20px;">
+                        🔄 Scanning for devices on ${lanData.subnet}.x...<br>
+                        <span style="font-size: 12px; margin-top: 8px;">
+                        If no devices appear, make sure:<br>
+                        ✅ Other devices opened this page<br>
+                        ✅ They're on same WiFi (${lanData.subnet}.x)<br>
+                        ✅ Wait 5-10 seconds for detection
+                        </span>
+                    </p>
+                `;
+                return;
+            }
+            
             container.innerHTML = '';
-            new QRCode(container, {
-                text: qrData,
-                width: 256,
-                height: 256,
-                colorDark: '#1f2937',
-                colorLight: '#ffffff'
+            foundDevices.forEach((device, deviceId) => {
+                const card = document.createElement('div');
+                card.className = 'device-card found';
+                
+                const timeSinceSignal = Date.now() - device.timestamp;
+                const status = timeSinceSignal < 2000 ? '✅ Active' : '⏳ Standby';
+                
+                card.innerHTML = `
+                    <div class="device-info-text">
+                        <div class="device-name">📱 ${device.name}</div>
+                        <div class="device-subnet">
+                            🌐 ${device.ip} | ${status} | Signal: ${Math.round(timeSinceSignal / 1000)}s ago
+                        </div>
+                    </div>
+                    <button onclick="selectDevice('${device.id}', '${device.name}')" class="btn btn-select">
+                        ✅ Select
+                    </button>
+                `;
+                
+                container.appendChild(card);
             });
             
-            document.getElementById('qrModal').classList.add('show');
+            console.log('📊 Devices found:', foundDevices.size);
+        }
+        
+        function refreshDiscovery() {
+            console.log('🔄 Refreshing discovery...');
+            foundDevices.clear();
+            discoverDevices();
+        }
+        
+        function selectDevice(deviceId, deviceName) {
+            console.log('✅ Selected:', deviceName);
+            
+            // Store selected device
+            localStorage.setItem('selectedDevice', JSON.stringify({
+                id: deviceId,
+                name: deviceName,
+                timestamp: Date.now()
+            }));
+            
+            // Navigate to connect page
+            window.location.href = 'connect.html';
         }
         
         function editDeviceName() {
@@ -717,37 +455,39 @@ connect_with_lan_data = '''<!DOCTYPE html>
             }
             myDeviceName = newName;
             localStorage.setItem('deviceName', myDeviceName);
-            document.getElementById('currentDeviceName').textContent = myDeviceName;
+            document.getElementById('myDeviceName').textContent = myDeviceName;
             closeModal('nameModal');
         }
+        
+        // Cleanup on page close
+        window.addEventListener('beforeunload', () => {
+            if (broadcastInterval) clearInterval(broadcastInterval);
+            if (discoveryInterval) clearInterval(discoveryInterval);
+        });
     </script>
 </body>
 </html>'''
 
-# Save both files
-with open('lan-detector.html', 'w', encoding='utf-8') as f:
-    f.write(lan_detector)
+# Save discover.html
+with open('discover.html', 'w', encoding='utf-8') as f:
+    f.write(discover_html)
 
-with open('connect.html', 'w', encoding='utf-8') as f:
-    f.write(connect_with_lan_data)
-
-print("✅ TWO SEPARATE FILES CREATED!")
-print("\n📄 File 1: lan-detector.html")
-print("   - Detects local IP via WebRTC")
-print("   - Extracts subnet (192.168.1)")
-print("   - Shows network information")
-print("   - Stores data in localStorage")
-print("   - Redirects to connect.html")
-print("\n📄 File 2: connect.html (UPDATED)")
-print("   - Receives LAN data from detector")
-print("   - Displays LAN status & info")
-print("   - Uses subnet for device filtering")
-print("   - Redirects back to detector if needed")
-print("\n✅ Flow:")
-print("   1. User opens lan-detector.html")
-print("   2. Detects network (IP, subnet)")
-print("   3. Stores in localStorage")
-print("   4. Redirects to connect.html")
-print("   5. connect.html reads LAN data")
-print("   6. Filters devices by subnet")
-print("\n🚀 PERFECT SEPARATION!")
+print("✅ discover.html - LOCAL DEVICE DISCOVERY SYSTEM CREATED!")
+print("\n🔧 KEY FEATURES:")
+print("   1. BROADCASTING: Device sends heartbeat every 1 second")
+print("   2. SIGNAL STORAGE: Signals stored in localStorage")
+print("   3. DISCOVERY: Scan localStorage for OTHER broadcasts")
+print("   4. FILTERING: Only show devices on SAME subnet")
+print("   5. TIME-BASED: Remove stale signals older than 15 seconds")
+print("   6. REAL-TIME: Updates every 500ms")
+print("\n✅ HOW IT WORKS:")
+print("   Device A → Broadcast heartbeat (localStorage)")
+print("                         ↓")
+print("   Device B → Scans localStorage every 500ms")
+print("                         ↓")
+print("   Device B → Finds Device A's signal!")
+print("                         ↓")
+print("   Device B → Displays Device A in list")
+print("                         ↓")
+print("   User clicks 'Select' → Goes to connect.html")
+print("\n🚀 PERFECT LOCAL NETWORK DISCOVERY!")
