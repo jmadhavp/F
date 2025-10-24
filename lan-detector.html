@@ -1,6 +1,4 @@
-
-# Create lan-detector.html - Dedicated IP/Subnet detection
-lan_detector = '''<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -100,13 +98,13 @@ lan_detector = '''<!DOCTYPE html>
     <div class="container">
         <h1>🌐 LocalDrop LAN Detector</h1>
         <p class="subtitle">Detecting your network...</p>
-        
+
         <div class="spinner" id="spinner"></div>
-        
+
         <div class="status" id="status">
             Scanning local network configuration...
         </div>
-        
+
         <div class="info-box" id="infoBox">
             <div class="info-row">
                 <span class="label">📡 Status:</span>
@@ -129,14 +127,14 @@ lan_detector = '''<!DOCTYPE html>
                 <span class="value" id="networkValue">-</span>
             </div>
         </div>
-        
+
         <div class="error-text" id="errorText"></div>
-        
+
         <button class="btn" id="continueBtn" onclick="goToConnect()">
             ✅ Continue to Connect
         </button>
     </div>
-    
+
     <script>
         let lanData = {
             localIP: null,
@@ -146,47 +144,47 @@ lan_detector = '''<!DOCTYPE html>
             detected: false,
             timestamp: Date.now()
         };
-        
+
         // START DETECTION ON PAGE LOAD
         window.onload = function() {
             console.log('🌐 LocalDrop LAN Detector Started');
             detectLAN();
         };
-        
+
         // MAIN LAN DETECTION
         function detectLAN() {
             console.log('🔍 Detecting LAN configuration...');
-            
+
             // Try WebRTC first
             detectViaWebRTC();
         }
-        
+
         // METHOD 1: WebRTC (Most reliable)
         function detectViaWebRTC() {
             console.log('📡 Trying WebRTC detection...');
-            
+
             const pc = new RTCPeerConnection({ iceServers: [] });
             pc.createDataChannel('');
-            
+
             let foundIP = false;
-            
+
             pc.onicecandidate = (ice) => {
                 if (!ice || !ice.candidate || foundIP) return;
-                
+
                 try {
                     const candidate = ice.candidate.candidate;
-                    const ipRegex = /([0-9]{1,3}(\\.[0-9]{1,3}){3})/;
+                    const ipRegex = /([0-9]{1,3}(\.[0-9]{1,3}){3})/;
                     const match = ipRegex.exec(candidate);
-                    
+
                     if (match) {
                         const ipAddress = match[1];
-                        
+
                         // Ignore loopback
                         if (ipAddress.startsWith('127.')) {
                             console.log('⏭️  Skipping loopback:', ipAddress);
                             return;
                         }
-                        
+
                         foundIP = true;
                         console.log('✅ WebRTC IP found:', ipAddress);
                         processIP(ipAddress);
@@ -196,7 +194,7 @@ lan_detector = '''<!DOCTYPE html>
                     console.error('❌ Error parsing IP:', e);
                 }
             };
-            
+
             pc.onerror = (err) => {
                 console.error('❌ WebRTC Error:', err);
                 setTimeout(() => {
@@ -205,7 +203,7 @@ lan_detector = '''<!DOCTYPE html>
                     }
                 }, 2000);
             };
-            
+
             try {
                 pc.createOffer().then(offer => {
                     return pc.setLocalDescription(offer);
@@ -219,7 +217,7 @@ lan_detector = '''<!DOCTYPE html>
                 console.error('❌ Exception:', e);
                 detectViaFallback();
             }
-            
+
             // Timeout fallback
             setTimeout(() => {
                 if (!foundIP) {
@@ -228,11 +226,11 @@ lan_detector = '''<!DOCTYPE html>
                 }
             }, 5000);
         }
-        
+
         // METHOD 2: Fallback (When WebRTC fails)
         function detectViaFallback() {
             console.log('🔄 Using fallback detection...');
-            
+
             // Try fetch to local gateway
             const gateways = [
                 'http://192.168.1.1:80',
@@ -240,7 +238,7 @@ lan_detector = '''<!DOCTYPE html>
                 'http://10.0.0.1:80',
                 'http://172.16.0.1:80'
             ];
-            
+
             Promise.race(gateways.map(gateway => 
                 fetch(gateway, { method: 'HEAD', mode: 'no-cors' })
                     .then(() => {
@@ -258,39 +256,39 @@ lan_detector = '''<!DOCTYPE html>
                 detectViaNavigator();
             });
         }
-        
+
         // METHOD 3: Navigator (Last resort)
         function detectViaNavigator() {
             console.log('🔧 Using navigator detection...');
-            
+
             // Common private ranges guess based on user's connectivity
             const guesses = [
                 '192.168.1.100',
                 '192.168.0.100',
                 '10.0.0.100'
             ];
-            
+
             // Try first guess (usually works)
             processIP(guesses[0]);
         }
-        
+
         // PROCESS DETECTED IP
         function processIP(ipAddress) {
             console.log('⚙️  Processing IP:', ipAddress);
-            
+
             // Validate IP format
             if (!isValidIP(ipAddress)) {
                 console.error('❌ Invalid IP format:', ipAddress);
                 handleDetectionError('Invalid IP detected');
                 return;
             }
-            
+
             // Extract subnet
             const parts = ipAddress.split('.');
             const subnet = parts[0] + '.' + parts[1] + '.' + parts[2];
             const range = subnet + '.1 - ' + subnet + '.254';
             const networkName = getNetworkName(subnet);
-            
+
             // Store data
             lanData.localIP = ipAddress;
             lanData.subnet = subnet;
@@ -298,34 +296,34 @@ lan_detector = '''<!DOCTYPE html>
             lanData.networkName = networkName;
             lanData.detected = true;
             lanData.timestamp = Date.now();
-            
+
             console.log('✅ LAN Data:', lanData);
-            
+
             // Save to localStorage
             localStorage.setItem('lanData', JSON.stringify(lanData));
-            
+
             // Update UI
             displaySuccess();
         }
-        
+
         // DISPLAY SUCCESS
         function displaySuccess() {
             console.log('✅ Displaying success...');
-            
+
             document.getElementById('spinner').style.display = 'none';
             document.getElementById('status').textContent = '✅ Network detected successfully!';
-            
+
             const box = document.getElementById('infoBox');
             box.classList.add('active', 'success');
-            
+
             document.getElementById('statusValue').textContent = '✅ LAN Detected';
             document.getElementById('ipValue').textContent = lanData.localIP;
             document.getElementById('subnetValue').textContent = lanData.subnet + '.x';
             document.getElementById('rangeValue').textContent = lanData.range;
             document.getElementById('networkValue').textContent = lanData.networkName;
-            
+
             document.getElementById('continueBtn').classList.add('active');
-            
+
             // Also send to localStorage for main app
             window.localStorage.setItem('deviceLANInfo', JSON.stringify({
                 ip: lanData.localIP,
@@ -334,35 +332,35 @@ lan_detector = '''<!DOCTYPE html>
                 timestamp: Date.now()
             }));
         }
-        
+
         // DISPLAY ERROR
         function handleDetectionError(errorMsg) {
             console.error('❌ Detection error:', errorMsg);
-            
+
             document.getElementById('spinner').style.display = 'none';
             document.getElementById('status').textContent = '⚠️  Detection had issues';
-            
+
             const box = document.getElementById('infoBox');
             box.classList.add('active', 'error');
-            
+
             document.getElementById('statusValue').textContent = '⚠️  Partial Detection';
             document.getElementById('ipValue').textContent = 'Unable to detect';
             document.getElementById('subnetValue').textContent = 'Using localhost mode';
             document.getElementById('rangeValue').textContent = 'N/A';
             document.getElementById('networkValue').textContent = 'Localhost';
-            
+
             document.getElementById('errorText').textContent = errorMsg;
             document.getElementById('errorText').style.display = 'block';
-            
+
             // Still allow to continue
             document.getElementById('continueBtn').textContent = '⚠️  Continue Anyway';
             document.getElementById('continueBtn').classList.add('active');
-            
+
             // Save fallback data
             lanData.localIP = '127.0.0.1';
             lanData.subnet = '127.0.0';
             lanData.detected = false;
-            
+
             window.localStorage.setItem('deviceLANInfo', JSON.stringify({
                 ip: lanData.localIP,
                 subnet: lanData.subnet,
@@ -370,7 +368,7 @@ lan_detector = '''<!DOCTYPE html>
                 timestamp: Date.now()
             }));
         }
-        
+
         // UTILITIES
         function isValidIP(ip) {
             const parts = ip.split('.');
@@ -380,7 +378,7 @@ lan_detector = '''<!DOCTYPE html>
                 return num >= 0 && num <= 255;
             });
         }
-        
+
         function getNetworkName(subnet) {
             const networks = {
                 '192.168.1': 'Home WiFi (192.168.1.x)',
@@ -390,14 +388,14 @@ lan_detector = '''<!DOCTYPE html>
                 '127.0.0': 'Localhost (This Device Only)',
                 '169.254': 'Link-Local Network'
             };
-            
+
             for (let [key, value] of Object.entries(networks)) {
                 if (subnet.startsWith(key)) return value;
             }
-            
+
             return subnet + '.x (Custom Network)';
         }
-        
+
         // GO TO CONNECT PAGE
         function goToConnect() {
             console.log('🚀 Navigating to connect.html with LAN data');
@@ -405,349 +403,4 @@ lan_detector = '''<!DOCTYPE html>
         }
     </script>
 </body>
-</html>'''
-
-# Create updated connect.html that uses LAN data from detector
-connect_with_lan_data = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LocalDrop - Connect & Share</title>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .header {
-            background: white;
-            border-radius: 16px;
-            padding: 24px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        .header h1 { font-size: 32px; color: #1f2937; }
-        .back-link { color: #667eea; text-decoration: none; font-size: 14px; display: inline-block; margin-top: 8px; }
-        .device-info {
-            background: white;
-            border-radius: 16px;
-            padding: 24px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        .device-name-display {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-        .device-name-display h2 { font-size: 24px; color: #1f2937; }
-        .lan-status-box {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            color: white;
-            padding: 16px;
-            border-radius: 12px;
-            margin-bottom: 16px;
-            font-weight: 600;
-            text-align: center;
-        }
-        .network-info {
-            background: #f3f4f6;
-            border: 1px solid #e5e7eb;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 16px;
-            font-size: 12px;
-            color: #6b7280;
-        }
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: all 0.2s;
-            font-size: 14px;
-        }
-        .btn-primary { background: #667eea; color: white; }
-        .btn-success { background: #10b981; color: white; }
-        .btn-info { background: #3b82f6; color: white; }
-        .btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-        }
-        .controls {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            margin-bottom: 16px;
-        }
-        .status {
-            padding: 12px;
-            background: #f3f4f6;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-        .status.online { background: #d1fae5; color: #065f46; }
-        .section {
-            background: white;
-            border-radius: 16px;
-            padding: 24px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        .footer {
-            background: white;
-            border-radius: 16px;
-            padding: 24px;
-            text-align: center;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            color: #6b7280;
-        }
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        .modal.show { display: flex !important; }
-        .modal-content {
-            background: white;
-            border-radius: 16px;
-            padding: 32px;
-            max-width: 500px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 24px;
-        }
-        .modal-header h3 { font-size: 24px; }
-        .close-btn { background: none; border: none; font-size: 32px; cursor: pointer; color: #6b7280; }
-        .file-input { display: none; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>🚀 LocalDrop - LAN Transfer</h1>
-        <a href="lan-detector.html" class="back-link">← Detect Network Again</a>
-    </div>
-    
-    <div class="device-info">
-        <div class="device-name-display">
-            <div>
-                <h2 id="currentDeviceName">Loading...</h2>
-                <p style="font-size: 14px; color: #6b7280;">Your Device</p>
-            </div>
-            <button onclick="editDeviceName()" class="btn btn-primary">✏️ Edit</button>
-        </div>
-        
-        <!-- LAN STATUS FROM DETECTOR -->
-        <div class="lan-status-box" id="lanStatus">
-            📡 LAN: Loading detection data...
-        </div>
-        
-        <!-- NETWORK INFO -->
-        <div class="network-info" id="networkInfo">
-            Loading network information...
-        </div>
-        
-        <div class="controls">
-            <button onclick="discoverDevices()" class="btn btn-success">🔍 Discover LAN Devices</button>
-            <button onclick="showMyQR()" class="btn btn-info">📱 Show QR</button>
-        </div>
-        
-        <div class="status online" id="connectionStatus">
-            ✅ Ready to connect
-        </div>
-    </div>
-    
-    <div class="section">
-        <h2>📱 Devices on Your LAN</h2>
-        <div id="connectedDevices">
-            <p style="color: #6b7280; text-align: center; padding: 20px;">Click "Discover LAN Devices"</p>
-        </div>
-    </div>
-    
-    <div class="footer">
-        <p><strong>🔒 LAN ONLY:</strong> This page uses LAN detection from lan-detector.html</p>
-        <p style="margin-top: 8px; font-size: 14px;">Made with <strong style="color: #ef4444;">❤️</strong> in India by <strong>PROGRAMMER MJ</strong></p>
-    </div>
-    
-    <!-- Modals -->
-    <div id="nameModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Edit Device Name</h3>
-                <button class="close-btn" onclick="closeModal('nameModal')">×</button>
-            </div>
-            <div style="margin-bottom: 24px;">
-                <input type="text" id="deviceNameInput" maxlength="20" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px;">
-            </div>
-            <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                <button onclick="closeModal('nameModal')" class="btn" style="background: #e5e7eb; color: #1f2937;">Cancel</button>
-                <button onclick="saveDeviceName()" class="btn btn-primary">Save</button>
-            </div>
-        </div>
-    </div>
-    
-    <div id="qrModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>📱 My QR Code</h3>
-                <button class="close-btn" onclick="closeModal('qrModal')">×</button>
-            </div>
-            <div style="margin-bottom: 24px; text-align: center;">
-                <div id="qrcode"></div>
-                <p style="font-size: 12px; color: #6b7280; margin-top: 16px;">Network: <span id="qrNetwork"></span></p>
-            </div>
-        </div>
-    </div>
-    
-    <script>
-        let myDeviceId = '';
-        let myDeviceName = '';
-        let lanData = null;
-        
-        window.onload = function() {
-            console.log('📱 Connect page loading...');
-            
-            // GET LAN DATA FROM lan-detector
-            const lanInfo = localStorage.getItem('deviceLANInfo');
-            if (lanInfo) {
-                lanData = JSON.parse(lanInfo);
-                console.log('✅ LAN Data received from detector:', lanData);
-            } else {
-                console.warn('⚠️  No LAN data found - redirecting to detector');
-                window.location.href = 'lan-detector.html';
-                return;
-            }
-            
-            // Initialize device
-            myDeviceId = localStorage.getItem('deviceId') || 'DEV-' + Date.now();
-            myDeviceName = localStorage.getItem('deviceName') || 'Device-' + Math.floor(Math.random() * 9000);
-            
-            localStorage.setItem('deviceId', myDeviceId);
-            localStorage.setItem('deviceName', myDeviceName);
-            
-            document.getElementById('currentDeviceName').textContent = myDeviceName;
-            
-            // Display LAN status
-            displayLANStatus();
-            
-            if (!localStorage.getItem('visited')) {
-                localStorage.setItem('visited', 'true');
-                setTimeout(() => editDeviceName(), 500);
-            }
-        };
-        
-        function displayLANStatus() {
-            const statusBox = document.getElementById('lanStatus');
-            const infoBox = document.getElementById('networkInfo');
-            
-            statusBox.innerHTML = `📡 LAN: ${lanData.name}`;
-            infoBox.innerHTML = `
-                <strong>✅ Network Detected</strong><br>
-                Your IP: ${lanData.ip}<br>
-                Subnet: ${lanData.subnet}.x<br>
-                <span style="font-size: 11px; color: #9ca3af;">Only devices on ${lanData.subnet}.x can connect</span>
-            `;
-        }
-        
-        function discoverDevices() {
-            console.log('🔍 Discovering LAN devices...');
-            // Device discovery logic here
-            document.getElementById('connectedDevices').innerHTML = `
-                <p style="color: #10b981; text-align: center; padding: 20px;">
-                    ✅ Scanning ${lanData.subnet}.x for devices...
-                </p>
-            `;
-        }
-        
-        function showMyQR() {
-            const qrData = 'LOCALDROP:' + myDeviceId + ':' + myDeviceName + ':' + lanData.subnet;
-            document.getElementById('qrNetwork').textContent = lanData.subnet + '.x';
-            
-            const container = document.getElementById('qrcode');
-            container.innerHTML = '';
-            new QRCode(container, {
-                text: qrData,
-                width: 256,
-                height: 256,
-                colorDark: '#1f2937',
-                colorLight: '#ffffff'
-            });
-            
-            document.getElementById('qrModal').classList.add('show');
-        }
-        
-        function editDeviceName() {
-            document.getElementById('deviceNameInput').value = myDeviceName;
-            document.getElementById('nameModal').classList.add('show');
-        }
-        
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('show');
-        }
-        
-        function saveDeviceName() {
-            const newName = document.getElementById('deviceNameInput').value.trim();
-            if (!newName || newName.length > 20) {
-                alert('Invalid name');
-                return;
-            }
-            myDeviceName = newName;
-            localStorage.setItem('deviceName', myDeviceName);
-            document.getElementById('currentDeviceName').textContent = myDeviceName;
-            closeModal('nameModal');
-        }
-    </script>
-</body>
-</html>'''
-
-# Save both files
-with open('lan-detector.html', 'w', encoding='utf-8') as f:
-    f.write(lan_detector)
-
-with open('connect.html', 'w', encoding='utf-8') as f:
-    f.write(connect_with_lan_data)
-
-print("✅ TWO SEPARATE FILES CREATED!")
-print("\n📄 File 1: lan-detector.html")
-print("   - Detects local IP via WebRTC")
-print("   - Extracts subnet (192.168.1)")
-print("   - Shows network information")
-print("   - Stores data in localStorage")
-print("   - Redirects to connect.html")
-print("\n📄 File 2: connect.html (UPDATED)")
-print("   - Receives LAN data from detector")
-print("   - Displays LAN status & info")
-print("   - Uses subnet for device filtering")
-print("   - Redirects back to detector if needed")
-print("\n✅ Flow:")
-print("   1. User opens lan-detector.html")
-print("   2. Detects network (IP, subnet)")
-print("   3. Stores in localStorage")
-print("   4. Redirects to connect.html")
-print("   5. connect.html reads LAN data")
-print("   6. Filters devices by subnet")
-print("\n🚀 PERFECT SEPARATION!")
+</html>
