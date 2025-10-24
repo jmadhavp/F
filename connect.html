@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LocalDrop - Connect & Share</title>
 
-    <!-- Load QRCode.js library FIRST -->
+    <!-- Load QRCode.js library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
@@ -119,12 +119,30 @@
             color: #065f46;
         }
 
+        .status.connecting {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status.connected {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
         .devices-section {
             background: white;
             border-radius: 16px;
             padding: 24px;
             margin-bottom: 20px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .device-card {
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            color: white;
+            margin-bottom: 12px;
         }
 
         .footer {
@@ -278,10 +296,11 @@
     </div>
 
     <div class="devices-section">
-        <h2>Available Devices</h2>
-        <div style="margin-top: 20px; padding: 40px; text-align: center; background: #f9fafb; border-radius: 12px;">
-            <p style="color: #6b7280;">🔍 Open this page on other devices</p>
-            <p style="color: #6b7280; font-size: 14px; margin-top: 8px;">Or use "Discover Devices" from home page</p>
+        <h2>Connected Devices</h2>
+        <div id="connectedDevices" style="margin-top: 20px;">
+            <p style="color: #6b7280; text-align: center; padding: 20px;">
+                No devices connected yet. Scan a QR code or be discovered!
+            </p>
         </div>
     </div>
 
@@ -354,35 +373,68 @@
         // Global variables
         let myDeviceName = '';
         let myDeviceId = '';
+        let myPeerId = '';
         let qrScanner = null;
         let qrcodeInstance = null;
+        let peerConnection = null;
+        let dataChannel = null;
+        let connectedPeers = new Map();
+
+        // WebRTC Configuration
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun.cloudflare.com:3478' }
+            ]
+        };
 
         // Initialize on page load
         window.onload = function() {
             console.log('Page loaded, initializing...');
             initializeDevice();
+            startSignalingListener();
         };
 
         // Initialize device
         function initializeDevice() {
-            // Get or create device ID
             myDeviceId = localStorage.getItem('deviceId') || generateId();
             localStorage.setItem('deviceId', myDeviceId);
 
-            // Get or create device name
             myDeviceName = localStorage.getItem('deviceName') || generateDeviceName();
             localStorage.setItem('deviceName', myDeviceName);
 
-            // Update UI
+            myPeerId = 'peer-' + myDeviceId;
+
             document.getElementById('currentDeviceName').textContent = myDeviceName;
 
             console.log('Device initialized:', myDeviceName, myDeviceId);
+
+            // Register for discovery
+            registerDevice();
 
             // Check for first time
             if (!localStorage.getItem('hasVisited')) {
                 localStorage.setItem('hasVisited', 'true');
                 setTimeout(() => editDeviceName(), 500);
             }
+        }
+
+        // Register device for discovery
+        function registerDevice() {
+            const deviceInfo = {
+                id: myDeviceId,
+                peerId: myPeerId,
+                name: myDeviceName,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('device_' + myDeviceId, JSON.stringify(deviceInfo));
+
+            // Periodic heartbeat
+            setInterval(() => {
+                deviceInfo.timestamp = Date.now();
+                localStorage.setItem('device_' + myDeviceId, JSON.stringify(deviceInfo));
+            }, 3000);
         }
 
         // Generate random ID
@@ -430,6 +482,7 @@
             document.getElementById('currentDeviceName').textContent = myDeviceName;
             closeNameModal();
             showToast('Device name updated to: ' + myDeviceName);
+            registerDevice();
         }
 
         // Update character count
@@ -454,10 +507,11 @@
                 btn.disabled = false;
                 icon.classList.remove('spinning');
                 showToast('Device list refreshed');
+                updateConnectedDevices();
             }, 2000);
         }
 
-        // Show my QR code - FIXED VERSION
+        // Show my QR code
         function showMyQR() {
             console.log('Show QR button clicked');
 
@@ -466,24 +520,22 @@
                 return;
             }
 
-            // Update device name display
             document.getElementById('qrDeviceName').textContent = myDeviceName;
 
-            // Clear previous QR code
             const qrContainer = document.getElementById('qrcode');
             qrContainer.innerHTML = '';
 
-            // Create QR data
+            // Create signaling data for QR code
             const qrData = JSON.stringify({
-                type: 'localdrop-device',
+                type: 'localdrop-connect',
                 deviceId: myDeviceId,
+                peerId: myPeerId,
                 deviceName: myDeviceName,
                 timestamp: Date.now()
             });
 
             console.log('Generating QR code with data:', qrData);
 
-            // Generate QR code using QRCode.js
             try {
                 qrcodeInstance = new QRCode(qrContainer, {
                     text: qrData,
@@ -495,8 +547,6 @@
                 });
 
                 console.log('QR code generated successfully');
-
-                // Show modal
                 document.getElementById('qrModal').classList.add('show');
 
             } catch (error) {
@@ -508,7 +558,6 @@
         // Close QR modal
         function closeQRModal() {
             document.getElementById('qrModal').classList.remove('show');
-            // Clean up QR code instance
             if (qrcodeInstance) {
                 const qrContainer = document.getElementById('qrcode');
                 qrContainer.innerHTML = '';
@@ -573,12 +622,12 @@
             });
         }
 
-        // Handle QR scan result
+        // Handle QR scan result - NOW WITH REAL CONNECTION
         function handleQRScan(qrData) {
             try {
                 const data = JSON.parse(qrData);
 
-                if (data.type === 'localdrop-device') {
+                if (data.type === 'localdrop-connect') {
                     if (data.deviceId === myDeviceId) {
                         showToast('Cannot connect to yourself!');
                         return;
@@ -592,16 +641,206 @@
                         qrScanner.stop();
                     }
 
-                    setTimeout(() => {
-                        closeScannerModal();
-                        showToast('Connected to ' + data.deviceName + '!');
-                    }, 2000);
+                    // Actually connect to the peer
+                    connectToPeer(data);
+
                 } else {
                     showToast('Invalid QR code');
                 }
             } catch (error) {
                 showToast('Invalid QR code format');
             }
+        }
+
+        // REAL WebRTC P2P Connection
+        function connectToPeer(remotePeerData) {
+            console.log('Connecting to peer:', remotePeerData);
+
+            updateStatus('Establishing connection...', 'connecting');
+
+            // Create WebRTC connection
+            peerConnection = new RTCPeerConnection(rtcConfig);
+
+            // Create data channel
+            dataChannel = peerConnection.createDataChannel('fileTransfer');
+
+            dataChannel.onopen = () => {
+                console.log('Data channel opened');
+                updateStatus('✅ Connected to ' + remotePeerData.deviceName, 'connected');
+                addConnectedDevice(remotePeerData);
+                closeScannerModal();
+                showToast('Connected to ' + remotePeerData.deviceName + '!');
+            };
+
+            dataChannel.onmessage = (event) => {
+                console.log('Received message:', event.data);
+                handleReceivedData(event.data);
+            };
+
+            dataChannel.onerror = (error) => {
+                console.error('Data channel error:', error);
+                updateStatus('Connection error', 'online');
+            };
+
+            // Handle ICE candidates
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    console.log('ICE candidate:', event.candidate);
+                    // Store for signaling (using localStorage)
+                    storeSignalingData('candidate', event.candidate, remotePeerData.deviceId);
+                }
+            };
+
+            // Create offer
+            peerConnection.createOffer()
+                .then(offer => {
+                    return peerConnection.setLocalDescription(offer);
+                })
+                .then(() => {
+                    console.log('Offer created:', peerConnection.localDescription);
+                    // Store offer for signaling
+                    storeSignalingData('offer', peerConnection.localDescription, remotePeerData.deviceId);
+                })
+                .catch(error => {
+                    console.error('Error creating offer:', error);
+                    updateStatus('Connection failed', 'online');
+                });
+        }
+
+        // Store signaling data in localStorage
+        function storeSignalingData(type, data, targetDeviceId) {
+            const signalingData = {
+                type: type,
+                from: myDeviceId,
+                to: targetDeviceId,
+                data: data,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('signal_' + myDeviceId + '_' + targetDeviceId, JSON.stringify(signalingData));
+        }
+
+        // Listen for signaling data
+        function startSignalingListener() {
+            setInterval(() => {
+                // Check for signaling data addressed to this device
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.includes('signal_') && key.includes('_' + myDeviceId)) {
+                        try {
+                            const signalingData = JSON.parse(localStorage.getItem(key));
+                            if (Date.now() - signalingData.timestamp < 30000) { // Within 30 seconds
+                                handleSignalingData(signalingData);
+                                localStorage.removeItem(key); // Remove after processing
+                            }
+                        } catch (e) {
+                            console.error('Error parsing signaling data:', e);
+                        }
+                    }
+                }
+            }, 1000); // Check every second
+        }
+
+        // Handle received signaling data
+        function handleSignalingData(signalingData) {
+            console.log('Received signaling data:', signalingData);
+
+            if (!peerConnection) {
+                // Create peer connection if we're receiving an offer
+                peerConnection = new RTCPeerConnection(rtcConfig);
+
+                peerConnection.ondatachannel = (event) => {
+                    dataChannel = event.channel;
+                    dataChannel.onopen = () => {
+                        console.log('Data channel opened (receiver)');
+                        updateStatus('✅ Connected', 'connected');
+                    };
+                    dataChannel.onmessage = (event) => {
+                        handleReceivedData(event.data);
+                    };
+                };
+
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        storeSignalingData('candidate', event.candidate, signalingData.from);
+                    }
+                };
+            }
+
+            if (signalingData.type === 'offer') {
+                peerConnection.setRemoteDescription(new RTCSessionDescription(signalingData.data))
+                    .then(() => peerConnection.createAnswer())
+                    .then(answer => peerConnection.setLocalDescription(answer))
+                    .then(() => {
+                        storeSignalingData('answer', peerConnection.localDescription, signalingData.from);
+                    });
+            } else if (signalingData.type === 'answer') {
+                peerConnection.setRemoteDescription(new RTCSessionDescription(signalingData.data));
+            } else if (signalingData.type === 'candidate') {
+                peerConnection.addIceCandidate(new RTCIceCandidate(signalingData.data));
+            }
+        }
+
+        // Handle received data
+        function handleReceivedData(data) {
+            console.log('Handling received data:', data);
+            // This is where you'd handle file transfers, messages, etc.
+        }
+
+        // Update connection status
+        function updateStatus(message, statusClass) {
+            const statusEl = document.getElementById('connectionStatus');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + statusClass;
+        }
+
+        // Add connected device to list
+        function addConnectedDevice(deviceData) {
+            connectedPeers.set(deviceData.deviceId, deviceData);
+            updateConnectedDevices();
+        }
+
+        // Update connected devices display
+        function updateConnectedDevices() {
+            const container = document.getElementById('connectedDevices');
+
+            if (connectedPeers.size === 0) {
+                container.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">No devices connected yet. Scan a QR code or be discovered!</p>';
+                return;
+            }
+
+            container.innerHTML = '';
+            connectedPeers.forEach((device, deviceId) => {
+                const card = document.createElement('div');
+                card.className = 'device-card';
+                card.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-size: 18px; font-weight: 600; margin-bottom: 4px;">📱 ${device.deviceName}</div>
+                            <div style="font-size: 14px; opacity: 0.9;">Connected</div>
+                        </div>
+                        <button onclick="disconnectPeer('${deviceId}')" class="btn" style="background: rgba(255,255,255,0.2); border: 1px solid white;">
+                            Disconnect
+                        </button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Disconnect from peer
+        function disconnectPeer(deviceId) {
+            connectedPeers.delete(deviceId);
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            if (dataChannel) {
+                dataChannel.close();
+                dataChannel = null;
+            }
+            updateConnectedDevices();
+            updateStatus('✅ Ready to connect', 'online');
+            showToast('Disconnected');
         }
 
         // Show toast notification
