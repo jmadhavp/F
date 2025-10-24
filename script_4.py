@@ -1,4 +1,6 @@
-# LocalDrop v2.0.0 - Multi-Page Application
+
+# Create comprehensive README
+readme_content = '''# LocalDrop v2.0.0 - Multi-Page Application
 ## Made with ❤️ in India by PROGRAMMER MJ
 
 Complete file sharing application with multiple pages for better organization and functionality.
@@ -458,3 +460,16 @@ For issues or questions:
 ---
 
 **All pages work together to create a seamless file sharing experience!**
+'''
+
+with open('README.md', 'w', encoding='utf-8') as f:
+    f.write(readme_content)
+
+print("✅ README.md created - Comprehensive documentation")
+print("\n📦 Complete Multi-Page Application Created!")
+print("\nFiles created:")
+print("  1. index.html - Landing page")
+print("  2. connect.html - Connection & QR functionality")
+print("  3. discover.html - Device discovery")
+print("  4. transfer.html - File transfer")
+print("  5. README.md - Full documentation")
